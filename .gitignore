@@ -1,0 +1,19 @@
+# 构建
+build/
+out/
+*.sln
+*.vcxproj*
+.vs/
+
+# 输出
+bin/
+obj/
+
+# 本地配置（含机器相关路径，不入库）
+pdfword.ini
+!config/pdfword.ini.example
+
+# 杂项
+*.user
+*.tmp
+*.log

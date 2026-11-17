@@ -1,0 +1,19 @@
+; PdfWord 配置示例
+; 用法：复制为 pdfword.ini，放到 pdfword_ui.exe / pdfword_cli.exe 同目录。
+; 查找优先级：显式传入 > 环境变量 > exe 同目录 ini > 注册表 > 常见安装目录 > PATH
+
+; LibreOffice headless 入口，可写 exe 绝对路径，也可只写便携目录
+; （程序会自动尝试 <目录>/program/soffice.exe）
+libre_office = D:/Portable/LibreOffice/program/soffice.exe
+
+; 便携/解压版 MuPDF 动态库目录（仅当以动态链接方式集成 MuPDF 时需要）
+mupdf_dir =
+
+; 工作目录（隔离 profile、临时输出都放这里）；留空 = %LOCALAPPDATA%/PdfWord/work
+work_dir =
+
+; 单次 LibreOffice 转换超时（毫秒），5 秒 ~ 1 小时
+timeout_ms = 180000
+
+; 单页渲染长边上限（像素），512 ~ 16384，防止超大页面爆内存
+render_max_side = 4096

@@ -1,0 +1,31 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "msvc-x64",
+      "displayName": "VS2022 x64 + Qt 6.12（不含 MuPDF）",
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "binaryDir": "${sourceDir}/build/msvc-x64",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.12.0/msvc2022_64",
+        "PDFWORD_WITH_MUPDF": "OFF"
+      }
+    },
+    {
+      "name": "mupdf",
+      "displayName": "VS2022 x64 + Qt 6.12 + MuPDF",
+      "inherits": "msvc-x64",
+      "binaryDir": "${sourceDir}/build/mupdf",
+      "cacheVariables": {
+        "PDFWORD_WITH_MUPDF": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "msvc-x64", "configuration": "Release" },
+    { "name": "debug", "configurePreset": "msvc-x64", "configuration": "Debug" },
+    { "name": "release-mupdf", "configurePreset": "mupdf", "configuration": "Release" }
+  ]
+}
