@@ -23,6 +23,11 @@ pdfword/
 └── docs/          架构说明 + 依赖接入步骤
 ```
 
+> **发布前必读**：`-DPDFWORD_WITH_MUPDF=ON` 会把 **MuPDF（AGPL-3.0 / Artifex 商业双授权）**
+> 静态链进 `pdfword_ui.exe` / `pdfword.dll` / `pdfword_cli.exe`。要对外分发这套二进制，
+> 就得按 AGPL-3.0 把整个软件的源码一起给出去，或者先找 Artifex 买商业许可。
+> 详见文末「[许可与 MuPDF 约束](#许可与-mupdf-约束发布前必读)」。
+
 ## 构建
 
 ```powershell
@@ -114,7 +119,7 @@ pwsh -File scripts\run-ui.ps1 -Build skeleton   # 骨架界面，只能转 docx/
 .\build\mupdf\bin\pdfword_ui_smoke.exe ".\build\mupdf\out-test\enc_888888.pdf" 888888 ".\build\mupdf\out-test\smoke_pw.docx"
 ```
 
-输出全是 `[ OK ]` 且退出码 0 即通过（**195 项断言 + 26 张截图**）。带密码样本时多 3 项任务断言、
+输出全是 `[ OK ]` 且退出码 0 即通过（**198 项断言 + 27 张截图**）。带密码样本时多 3 项任务断言、
 少的 2 项“合法范围”校验会换成 1 项“加密件读不到页数必须拦下”。覆盖点：
 
 - 主窗口 6 个顶级菜单（文件 / 转换 / PDF 工具 / 编辑与批注 / 视图 / 帮助）；窗口标题以 `Pdf-Toolkit` 开头；启动位置居中（与主屏可用区中心差 ≤12px）；
@@ -165,7 +170,7 @@ pwsh -File scripts\run-ui.ps1 -Build skeleton   # 骨架界面，只能转 docx/
   上移 / 下移换位再复位；删掉一条顶级后点「应用」，另存出 `<原名>_书签.pdf`，
   读回的条数 / 页码 / 层级与面板完全一致
 
-第 5 个参数是截图目录，会在那里把主窗口和各对话框各 `grab()` 成一张 PNG（共 25 张）：
+第 5 个参数是截图目录，会在那里把主窗口和各对话框各 `grab()` 成一张 PNG（共 27 张）：
 
 ```powershell
 .\build\mupdf\bin\pdfword_ui_smoke.exe "C:\Users\Lenovo\Desktop\tst\iw8ben.pdf" "" "" "D:\media\pdfword\build\mupdf\ui-shots"
@@ -209,6 +214,7 @@ form-dialog` **二十六张图**可以直接打开看布局，
 | 编辑与批注(&E) | 修改文字、图片… / 注释批注… / 添加超链接… / 查找替换… / 表单处理… | 见下节「编辑与批注菜单项」 |
 | 视图(&V) | **两级子菜单**：`文件列表 ▸`（显示文件列表 / 隐藏文件列表 ‖ 靠左 / 靠右）+ `日志窗口 ▸`（显示 / 隐藏）+ `书签目录 ▸`（显示书签目录 / 隐藏书签目录）+ `缩放 ▸`（放大一档 / 缩小一档 ‖ 适应宽度 / 适应窗口 / 实际大小 100%） | 文件面板显隐与停靠位置（也可直接把面板拖成浮动窗口）；日志窗口显隐；书签面板显隐；缩放与适应 |
 | 帮助(&H) | 能力报告 | 弹出后端 / LibreOffice / OCR 诊断（LibreOffice 版本取自缓存，还没转换过就写"未检测"） |
+| 帮助(&H) | 关于 Pdf-Toolkit… | 简介 + 版本号（取自 `project(Pdf-Toolkit VERSION …)`，现为 0.0.1）+ 联系人 / 邮箱（邮箱可点，走默认邮件客户端） |
 
 **PDF 工具菜单项**
 
@@ -369,7 +375,7 @@ PDF 里的“书签”和“目录”是同一个东西（文档里那棵 `/Outl
 | 能力 | 走哪个模块 | 状态 |
 | --- | --- | --- |
 | 工程编译 / Qt 界面启动 | ui | ✅ 已验证（窗口标题 `Pdf-Toolkit — PDF/Word 转换与预览`，启动居中） |
-| 界面菜单化重构（六入口进菜单 + 可停靠文件面板 + 三个弹窗） | ui | ✅ 已验证（`pdfword_ui_smoke` **195 项断言全过**；`QWidget::grab()` 出的 26 张界面图逐个核对过布局） |
+| 界面菜单化重构（六入口进菜单 + 可停靠文件面板 + 三个弹窗） | ui | ✅ 已验证（`pdfword_ui_smoke` **198 项断言全过**；`QWidget::grab()` 出的 27 张界面图逐个核对过布局） |
 | 预览里直接改（右键 → 拖框 → 改字 / 加字 / 批注 / 超链接 / 换图） | core + CLI + C ABI + ui | ✅ 已验证（`iw8ben.pdf` 第 2 页框住 `instructions for` 改成 `SMOKE-REPLACED`：产物 `<原名>_已编辑.pdf`、`findText` 命中第 2 页、**第 9 页文本逐字未变**；再往第 3 页空白处拖框打 `加字冒烟 ABC 123`，中文能搜到；CLI `replace-at` / `add-text` 与 C ABI 同名函数各跑一遍） |
 | 启动居中 / 产品名 Pdf-Toolkit | ui | ✅ 已验证（实测窗口落在 (128,32)，与可用区中心一致；标题、CLI 首行、docx 元数据 creator 均为 Pdf-Toolkit） |
 | 书签 / 目录管理（读 / 新增 / 修改 / 删除 / 移动 / 导出） | core + CLI + C ABI + ui | ✅ 已验证（core 侧 `fz_load_outline` 拍平后页码统一用 `fz_page_number_from_location`（外链解析不到记 0，不再靠 `uri == nullptr` 判空）、写回用 outline iterator 删旧树再逐条插；`iw8ben.pdf` 读回 12 条含 3 层、写入 5 条含中文再读回层级与页码一致，pypdf 交叉核对 `/Outlines` 的 `/First`–`/Next` 链确实是真实 `/Dest`；CLI `outline` / `set-outline`、C ABI `pw_pdf_outline` / `pw_pdf_set_outline` 各跑一遍；UI 侧见上面冒烟断言） |
@@ -549,3 +555,85 @@ PDF 里的“书签”和“目录”是同一个东西（文档里那棵 `/Outl
 1. `core` 不 include 任何 Qt 头文件 —— 换 web 壳时界面层整个丢掉，核心零改动。
 2. 外部依赖一律走接口（`IPdfBackend`、`OfficeRunner`），路径全部来自 `Config`，代码里不出现硬编码。
 3. 跨边界只传 `Status`/`ErrorCode`，不抛异常；C ABI 把错误码映射成整数返回。
+
+## 许可与 MuPDF 约束（发布前必读）
+
+**本仓库自己的代码是 MIT**（见 [LICENSE](LICENSE)，Copyright (c) 2026 wangtc）。
+但**构建出来的二进制不止包含本仓库的代码**——一旦打开 `PDFWORD_WITH_MUPDF=ON`，
+`libmupdf` 会被静态链接进 `pdfword_ui.exe` / `pdfword_cli.exe` / `pdfword.dll`，
+那几个文件的授权就由 MuPDF 说了算。
+
+### 依赖的授权一览
+
+| 组件 | 授权 | 对你意味着什么 |
+| --- | --- | --- |
+| **MuPDF**（`libmupdf`，vcpkg 的 `unofficial-libmupdf`） | **AGPL-3.0** 或 **Artifex 商业许可**（二选一） | 链接了它，整个软件按 AGPL；闭源分发必须先买商业许可 |
+| LibreOffice | MPL-2.0 | 本工程只以**子进程**调用 `soffice --convert-to`，不链接、不修改，MPL 的文件级传染不落到本项目上 |
+| Qt 6 | LGPL-3.0 / 商业 | 动态链接 + 随包分发 Qt DLL 即可，别静态链接闭源首发（静态要 LGPL 的例外条款或商业许可） |
+| Windows 内置 OCR（本工程用的就是它） | 系统能力，不随包分发 | 不影响本项目授权；若将来接 Tesseract 等引擎，那是 Apache-2.0，保留 NOTICE 即可 |
+
+### 三条路：AGPL 开源 / 买商业许可 / 干脆不发 MuPDF
+
+MuPDF 由 Artifex Software 开发，官方双授权（<https://mupdf.com/> 的 “LICENSING” 段、
+<https://mupdf.readthedocs.io/en/latest/license.html>）。**没有第三种**：不遵守 AGPL 又没买商业许可，
+就不能分发带 MuPDF 的软件，也不能拿它对外提供在线服务。
+
+#### 路径 A：按 AGPL-3.0 用（免费，但要开源整包）
+
+AGPL 管的是**整个软件**，不是“只有那个库”。把 MuPDF 链进 `pdfword_ui.exe`，
+就得把 `pdfword_ui.exe` 这个作品整体的源码给出去。具体要求：
+
+- **分发即给源码**：任何人拿到你的 exe/dll，你都要能提供**完整对应源码**
+  （本仓库的全部源码 + 你对 MuPDF 的任何修改 + 构建脚本），且不能对源码额外收费
+  （工本费除外）。
+- **保留声明**：不能去掉 MuPDF 的版权头、AGPL 文本和“可以找 Artifex 买商业许可”的说明。
+- **允许替换 MuPDF**：终端用户要能拿更新版的 MuPDF 重新链接/替换（AGPL 的 anti-tivoization 条款），
+  所以别把版本写死到无法替换，也别加锁阻止替换。
+- **网络服务也管**（AGPL §13，比 GPL 多出来的那一条）：如果把本工具做成 web 壳对外提供服务
+  （用户通过网络与它交互），必须向这些使用者提供获取完整源码的方式——页面上放源码地址即可，
+  但必须有。
+- **没有担保和支持**：AGPL 下 MuPDF 是 AS-IS。
+- 本仓库的 MIT 声明要保留（MIT 与 AGPL 兼容，最终产物整体按 AGPL-3.0 分发，
+  里面仍注明哪些文件来自 MIT 部分）。
+
+#### 路径 B：买 Artifex 商业许可（闭源、商用、免源码义务）
+
+要闭源卖、随硬件出货、做 SaaS 又不想开源，就走这条：商业许可会解除 AGPL 的全部约束
+（不必开源、不必给源码、不必允许替换），通常还带支持。联系方式：
+
+- 官方许可页 <https://artifex.com/licensing/>，或邮件 `sales@artifex.com`
+- 询价时说明清楚：**MuPDF 作为静态库链接进 Windows 桌面程序**、是否需要 SaaS 场景、
+  预计发行量——报价按场景定，不同场景价格差别很大
+
+**注意**：商业许可**按项目/产品**授权，不是买一次终身覆盖所有产品；换产品线要重新确认条款。
+
+#### 路径 C：不发 MuPDF（保持纯 MIT 分发）
+
+不需要 PDF 能力、或只想先发个壳，用 stub 后端构建：
+
+```powershell
+cmake -S . -B build/msvc-x64 -G "Visual Studio 17 2022" -A x64 `
+      -DCMAKE_PREFIX_PATH=D:/Qt/6.12.0/msvc2022_64 `
+      -DPDFWORD_WITH_MUPDF=OFF
+```
+
+这样编出来的产物里没有 MuPDF，可以按 MIT 分发；代价是 PDF 预览 / 文本 / 合并 / 拆分 /
+抽取 / 页面编辑 / 水印 / 加密全部报 `BackendMissing`（`doctor` 会写
+“PDF 后端: stub（不可用）”），只剩 LibreOffice 那条 docx ⇄ pdf 转换链可用。
+
+### 容易踩的四个坑
+
+1. **“我只发了 exe，没发源码，应该没事”** —— 不行。AGPL 的义务是“给接收者源码”，
+   不是“仓库里放着源码就行”；对方要，你就得能给。
+2. **“我用的 MIT LICENSE，所以我的软件是 MIT”** —— 那只是**本仓库代码**的授权。
+   链接了 AGPL 库的产物，产物本身按 AGPL。两个许可要分开看。
+3. **“我在内网用，不对外”** —— 纯自用（不把软件给任何别人、也不对外提供服务）没问题；
+   一旦交付给客户、装到别人的机器上、或者放到公网给外部用户点，就触发上面的义务。
+4. **别用 MuPDF / Artifex 的商标**：`MuPDF`、`Artifex` 及其 logo 是注册商标，
+   产品名、宣传页、图标里别借用（本工程叫 `Pdf-Toolkit`，与 Artifex 无隶属关系）。
+
+### 免责
+
+上面是对官方许可要点的转述与工程实践提醒，**不构成法律意见**。
+正式对外发布（尤其商业化）前，请以 <https://mupdf.com/> 与
+<https://www.gnu.org/licenses/agpl-3.0.html> 的原文为准，或咨询你自己的法务。

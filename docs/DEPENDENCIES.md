@@ -150,6 +150,21 @@ cmake -S . -B build/mupdf -G "Visual Studio 17 2022" -A x64 `
 > 官网页面上那个 `mupdf-*-windows.zip` 是**成品二进制**（mutool.exe 等），不含头文件和 lib，
 > 不能直接用来编译，别下错。
 
+### 许可（先说清楚，再决定要不要装）
+
+MuPDF 是 **AGPL-3.0 / Artifex 商业许可**双授权。本工程是 `unofficial-libmupdf` 的**静态库**
+（`libmupdf.lib`，约 73 MB），链接进 `pdfword_ui.exe` / `pdfword_cli.exe` / `pdfword.dll`。
+这意味着：
+
+- 对外分发这些产物 → 整个软件要按 AGPL-3.0 给出完整源码（本工程源码 + 你对 MuPDF 的改动）；
+- 做成 web 壳对外提供服务 → 触发 AGPL §13，必须给使用者提供源码获取方式；
+- 闭源 / 商用分发 → 先向 Artifex 买商业许可（`sales@artifex.com`、<https://artifex.com/licensing/>）；
+- 只想 MIT 分发 → 用 `-DPDFWORD_WITH_MUPDF=OFF`（stub 后端，PDF 功能报 `BackendMissing`）。
+
+完整的条款转述与四个常见误区见 README 的
+[「许可与 MuPDF 约束」](../README.md#许可与-mupdf-约束发布前必读)。
+装之前先确认你落在哪一条上，别等打包完再回头改。
+
 ### 版本对齐：1.26.10 实际踩到的坑
 
 `core/src/pdf_backend_mupdf.cpp` 已经按 **MuPDF 1.26.10** 编译通过，当时报错只有两处，

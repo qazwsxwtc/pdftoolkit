@@ -1210,6 +1210,44 @@ void MainWindow::createMenus() {
     // ---- 帮助 ----
     auto* helpMenu = menuBar()->addMenu(QStringLiteral("帮助(&H)"));
     helpMenu->addAction(QStringLiteral("能力报告"), this, &MainWindow::showCapabilityReport);
+    helpMenu->addSeparator();
+    helpMenu->addAction(QStringLiteral("关于 Pdf-Toolkit…"), this, &MainWindow::showAboutDialog);
+}
+
+void MainWindow::showAboutDialog() {
+    // 版本号来自 CMake 的 project(VERSION)；改版本只动 CMakeLists，这里自动跟上
+#ifdef PDFWORD_APP_VERSION
+    const QString version = QStringLiteral(PDFWORD_APP_VERSION);
+#else
+    const QString version = QStringLiteral("0.0.1");
+#endif
+
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("关于 Pdf-Toolkit"));
+    box.setTextFormat(Qt::RichText);
+    box.setIcon(QMessageBox::NoIcon);
+    if (!windowIcon().isNull()) box.setIconPixmap(windowIcon().pixmap(72, 72));
+    box.setText(QStringLiteral(
+                    "<h3>Pdf-Toolkit</h3>"
+                    "<p>PDF / Word 转换与预览编辑工具。界面是 Qt 6 Widgets，能力全部落在独立的 core 模块里"
+                    "（C++17 + MuPDF 直接读写 PDF，docx / doc 转换走 LibreOffice 子进程），"
+                    "所以同一套功能桌面界面、命令行、C ABI（web 壳）都能用。</p>"
+                    "<p><b>功能一览</b></p>"
+                    "<ul style=\"margin-top:0;\">"
+                    "<li>转换：PDF ⇄ Word / 图片，批量队列、可取消、带进度</li>"
+                    "<li>预览里直接改：拖框改字、加字、批注、超链接、表单、书签目录</li>"
+                    "<li>页面：合并 / 拆分 / 抽取 / 重排 / 旋转 / 裁剪 / 插页</li>"
+                    "<li>其他：文字与图片水印、压缩、加密解密、元数据、OCR 文字层</li>"
+                    "</ul>"
+                    "<p><b>版本：</b>%1<br/>"
+                    "<b>联系人：</b>王先生<br/>"
+                    "<b>邮箱：</b><a href=\"mailto:qazwsxwtc@163.com\">qazwsxwtc@163.com</a></p>")
+                    .arg(version));
+    // 让邮箱链接可点（默认 QMessageBox 里的富文本不响应链接）
+    box.setTextInteractionFlags(Qt::TextBrowserInteraction);
+    box.setStandardButtons(QMessageBox::Ok);
+    if (auto* ok = box.button(QMessageBox::Ok)) ok->setText(QStringLiteral("知道了"));
+    box.exec();
 }
 
 void MainWindow::dockFileList(bool rightSide) {

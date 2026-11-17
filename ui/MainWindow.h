@@ -71,6 +71,7 @@ private slots:
     void openFindReplace();
     void openForm();
     void showCapabilityReport();
+    void showAboutDialog();
     // ---- 预览里"就地编辑"：右键选动作 → 在页面上拖一下 → 直接写回并刷新预览 ----
     void showPreviewMenu(int page, const QPoint& globalPos);
     void startInlineEdit(int action);

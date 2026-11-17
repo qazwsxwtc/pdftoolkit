@@ -23,6 +23,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QRubberBand>
@@ -49,6 +50,7 @@
 #include <cstdio>
 #include <QDir>
 #include <filesystem>
+#include <functional>
 #include <functional>
 #include <memory>
 
@@ -131,6 +133,9 @@ int main(int argc, char** argv) {
     if (!missing.isEmpty()) std::printf("       缺少: %s\n", missing.join(QStringLiteral(" / ")).toLocal8Bit().constData());
     // 旧的合并式窗口已拆掉，菜单里不应再出现"文档工具"
     check(!actions.contains(QStringLiteral("文档工具…")), "PDF 工具菜单里不再有“文档工具…”");
+    check(actions.contains(QStringLiteral("关于 Pdf-Toolkit…")), "帮助菜单里有“关于 Pdf-Toolkit…”");
+    check(QString::fromLatin1(PDFWORD_APP_VERSION) == QStringLiteral("0.0.1"),
+          "关于窗口写的版本号是 0.0.1");
 
     // 视图菜单是两级：文件列表（靠左/靠右）、日志窗口（显示/隐藏）
     auto* fileListMenu = window.findChild<QMenu*>(QStringLiteral("menuFileList"));
@@ -442,6 +447,27 @@ int main(int argc, char** argv) {
             if (!ok) ++failures;
         };
         shoot(&window, "main-window");
+
+        // 「帮助 → 关于」：模态 exec，只能让定时器抓一张再替用户点掉
+        {
+            std::function<void(int)> closeAbout = [&dir, &closeAbout](int left) {
+                QTimer::singleShot(80, [&dir, &closeAbout, left]() {
+                    for (QWidget* w : QApplication::topLevelWidgets()) {
+                        auto* box = qobject_cast<QMessageBox*>(w);
+                        if (box == nullptr || !box->isVisible()) continue;
+                        const auto path = dir / "about-dialog.png";
+                        box->grab().save(QString::fromStdString(path.string()), "PNG");
+                        std::printf("[%s] \u622a\u56fe %s\n", " OK ",
+                                    path.string().c_str());
+                        box->accept();
+                        return;
+                    }
+                    if (left > 1) closeAbout(left - 1);
+                });
+            };
+            closeAbout(20);
+            QMetaObject::invokeMethod(&window, "showAboutDialog");
+        }
 
         // 居中：窗口中心应落在主屏可用区域的中心附近
         if (QScreen* screen = QGuiApplication::primaryScreen()) {
