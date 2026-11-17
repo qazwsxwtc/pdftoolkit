@@ -4,7 +4,7 @@ C++ + Qt 的 PDF / Word 转换与预览工具。**核心能力全部在被 Qt �
 Qt 只负责界面，同一条链路另有 CLI 和 C ABI 两种入口，方便以后直接套 web 壳。
 
 > 产品名是 **Pdf-Toolkit**；工程里的技术标识仍沿用 `pdfword`（target / exe 名
-> `pdfword_ui.exe`、`pdfword_cli.exe`、`pdfword.dll`、头文件目录 `pdfword/`、
+> `pdftoolkit.exe`、`pdfword_cli.exe`、`pdfword.dll`、头文件目录 `pdfword/`、
 > CMake 选项 `PDFWORD_*`、配置 `pdfword.ini`、环境变量 `PDFWORD_*`、
 > 仓库目录 `D:\media\pdfword`）。改产品名不动这些标识，是为了不给 web 壳的
 > C ABI、脚本和既有构建目录制造连锁改动。
@@ -16,6 +16,7 @@ pdfword/
 │   ├── src/                实现（LibreOffice 调用、OOXML 生成、PDF 后端、OCR 引擎）
 │   └── capi/               稳定 C ABI（pdfword.dll），web 壳的接入点
 ├── ui/            Qt 6 Widgets：可停靠文件面板 + PDF 预览 + 菜单化工具（只调 core）
+│   └── resources/           logo（pdftoolkit.png / .ico）+ icons.qrc + pdftoolkit.rc
 ├── cli/           命令行：doctor / convert / info / text / render / merge / split / watermark / imgwatermark / ocr / outline / set-outline
 ├── tests/         冒烟测试（无外部依赖，ctest 可跑）
 ├── cmake/         FindMuPDF.cmake
@@ -24,7 +25,7 @@ pdfword/
 ```
 
 > **发布前必读**：`-DPDFWORD_WITH_MUPDF=ON` 会把 **MuPDF（AGPL-3.0 / Artifex 商业双授权）**
-> 静态链进 `pdfword_ui.exe` / `pdfword.dll` / `pdfword_cli.exe`。要对外分发这套二进制，
+> 静态链进 `pdftoolkit.exe` / `pdfword.dll` / `pdfword_cli.exe`。要对外分发这套二进制，
 > 就得按 AGPL-3.0 把整个软件的源码一起给出去，或者先找 Artifex 买商业许可。
 > 详见文末「[许可与 MuPDF 约束](#许可与-mupdf-约束发布前必读)」。
 
@@ -41,9 +42,25 @@ cmake --preset msvc-x64
 cmake --build --preset release
 ```
 
-产物在 `build/msvc-x64/bin`：`pdfword_ui.exe`、`pdfword_cli.exe`、`pdfword.dll`、`pdfword_tests.exe`。
+产物在 `build/msvc-x64/bin`：`pdftoolkit.exe`、`pdfword_cli.exe`、`pdfword.dll`、`pdfword_tests.exe`。
+（界面 exe 的 target 名是 `pdfword_ui`，产物文件名由 `OUTPUT_NAME` 定成产品名 `pdftoolkit.exe`；
+命令行与 DLL 沿用工程标识 `pdfword_cli.exe` / `pdfword.dll`。）
 
-Qt 运行库：`D:\Qt\6.12.0\msvc2022_64\bin\windeployqt.exe --release build\msvc-x64\bin\pdfword_ui.exe`
+Qt 运行库：`D:\Qt\6.12.0\msvc2022_64\bin\windeployqt.exe --release build\msvc-x64\bin\pdftoolkit.exe`
+
+### 应用图标（logo）
+
+图标是编进二进制里的，分发时不用额外带图片文件：
+
+| 文件 | 作用 |
+| --- | --- |
+| `ui/resources/pdftoolkit.png` | 256×256 透明底，运行时 `QApplication::setWindowIcon()` / 主窗口 / 关于窗口都用它（`ui/AppIcon.cpp` 里取 `:/icons/pdftoolkit.png`） |
+| `ui/resources/pdftoolkit.ico` | 16/24/32/48/64/128/256 七个尺寸，给任务栏、标题栏、Alt-Tab 用 |
+| `ui/resources/pdftoolkit.rc` | `IDI_ICON1 ICON "pdftoolkit.ico"`，只编进 `pdftoolkit.exe` —— 这是**资源管理器里看到的文件图标** |
+| `ui/resources/icons.qrc` | Qt 资源清单（`set(CMAKE_AUTORCC ON)` 自动编译） |
+
+换 logo 就替换那两张图（保持 256×256 透明底、ico 多尺寸），重新构建即可，代码不用动。
+冒烟里有一条断言会检查窗口图标取得到 32×32 的位图，换图换错了会直接 FAIL。
 
 ### 带 MuPDF 的完整构建（PDF 能力全开）
 
@@ -84,7 +101,7 @@ vcpkg 的 `x64-windows` 是动态库三元组，依赖 DLL（harfbuzz、freetype
 
 两个构建目录的产物**同名**，双击错了就会看到“PDF 后端: stub（不可用）”：
 
-| 目录 | CMake 选项 | `pdfword_ui.exe` 体积 | 界面里的 PDF 后端 |
+| 目录 | CMake 选项 | `pdftoolkit.exe` 体积 | 界面里的 PDF 后端 |
 | --- | --- | --- | --- |
 | `build\mupdf` | `PDFWORD_WITH_MUPDF=ON` | ~37.8 MB（37,752,832 B） | `mupdf（可用）` |
 | `build\msvc-x64` | 默认（OFF） | ~0.5 MB | `stub（不可用）` |
@@ -103,9 +120,9 @@ pwsh -File scripts\run-ui.ps1 -Build skeleton   # 骨架界面，只能转 docx/
 工作目录默认落在 `%LOCALAPPDATA%\Pdf-Toolkit\work`
 （旧版本是 `%LOCALAPPDATA%\PdfWord\work`，改名后不自动搬迁，旧目录留着不删）。
 
-> 如果还留着 `publish\pdfword_ui.exe` 那份独立分发副本（带 Qt DLL，可以整个文件夹拷给别人），
+> 如果还留着 `publish\pdftoolkit.exe` 那份独立分发副本（带 Qt DLL，可以整个文件夹拷给别人），
 > 它不会跟着 `build` 自动更新：改完代码要手动
-> `Copy-Item build\mupdf\bin\pdfword_ui.exe publish\pdfword_ui.exe -Force`。
+> `Copy-Item build\mupdf\bin\pdftoolkit.exe publish\pdftoolkit.exe -Force`。
 > 覆盖前先把正在跑的旧窗口关掉，否则会报“文件被占用”。
 
 **界面冒烟测试**（不需要屏幕，真实构造主窗口与四个对话框，并跑一次带密码的转换任务）：
@@ -560,7 +577,7 @@ PDF 里的“书签”和“目录”是同一个东西（文档里那棵 `/Outl
 
 **本仓库自己的代码是 MIT**（见 [LICENSE](LICENSE)，Copyright (c) 2026 wangtc）。
 但**构建出来的二进制不止包含本仓库的代码**——一旦打开 `PDFWORD_WITH_MUPDF=ON`，
-`libmupdf` 会被静态链接进 `pdfword_ui.exe` / `pdfword_cli.exe` / `pdfword.dll`，
+`libmupdf` 会被静态链接进 `pdftoolkit.exe` / `pdfword_cli.exe` / `pdfword.dll`，
 那几个文件的授权就由 MuPDF 说了算。
 
 ### 依赖的授权一览
@@ -580,8 +597,8 @@ MuPDF 由 Artifex Software 开发，官方双授权（<https://mupdf.com/> 的 �
 
 #### 路径 A：按 AGPL-3.0 用（免费，但要开源整包）
 
-AGPL 管的是**整个软件**，不是“只有那个库”。把 MuPDF 链进 `pdfword_ui.exe`，
-就得把 `pdfword_ui.exe` 这个作品整体的源码给出去。具体要求：
+AGPL 管的是**整个软件**，不是“只有那个库”。把 MuPDF 链进 `pdftoolkit.exe`，
+就得把 `pdftoolkit.exe` 这个作品整体的源码给出去。具体要求：
 
 - **分发即给源码**：任何人拿到你的 exe/dll，你都要能提供**完整对应源码**
   （本仓库的全部源码 + 你对 MuPDF 的任何修改 + 构建脚本），且不能对源码额外收费

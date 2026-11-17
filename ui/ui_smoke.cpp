@@ -111,6 +111,8 @@ int main(int argc, char** argv) {
 
     check(window.menuBar()->actions().size() == 6, "主窗口有 6 个顶级菜单（文件/转换/PDF 工具/编辑与批注/视图/帮助）");
     check(window.windowTitle().startsWith(QStringLiteral("Pdf-Toolkit")), "窗口标题以 Pdf-Toolkit 开头");
+    check(!window.windowIcon().isNull(), "主窗口有 logo 图标（resources/icons.qrc 已编进二进制）");
+    check(!window.windowIcon().pixmap(32, 32).isNull(), "logo 能取到 32x32 的位图（任务栏/标题栏不空）");
     // 顶部那排导航已经撤掉，全部挪到预览区右下角
     check(window.findChild<QToolBar*>() == nullptr, "顶部预览工具栏已移除（导航挪到预览区右下角）");
 

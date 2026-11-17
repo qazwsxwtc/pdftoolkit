@@ -42,4 +42,4 @@ Get-ChildItem -LiteralPath $bin -File | Select-Object Name, Length | Format-Tabl
 Write-Host "下一步：" -ForegroundColor Yellow
 Write-Host "  1) 把 $bin\pdfword.ini.example 复制成 pdfword.ini，填 libre_office 路径（见 docs/DEPENDENCIES.md）"
 Write-Host "  2) $bin\pdfword_cli.exe doctor"
-Write-Host "  3) windeployqt 部署 Qt 运行库后再双击 $bin\pdfword_ui.exe"
+Write-Host "  3) windeployqt 部署 Qt 运行库后再双击 $bin\pdftoolkit.exe"

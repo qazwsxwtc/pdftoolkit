@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file alias="pdftoolkit.png">pdftoolkit.png</file>
+        <file alias="pdftoolkit.ico">pdftoolkit.ico</file>
+    </qresource>
+</RCC>

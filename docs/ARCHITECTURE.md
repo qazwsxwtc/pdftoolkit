@@ -248,7 +248,7 @@ PageTransform + 逆变换        <- ctm / inv / mediabox / dispbox，全部换�
   --nofirststartwizard --nolockcheck --nodefault -env:UserInstallation=<workDir>/lo-profile`，
   和 `convert()` 用同一套——不然裸 `--version` 会去碰默认 profile，把启动向导再拉出来一遍。
 
-实测：启动 `pdfword_ui.exe` 后 4 秒内 `soffice` / `soffice.bin` 进程数为 0。
+实测：启动 `pdftoolkit.exe` 后 4 秒内 `soffice` / `soffice.bin` 进程数为 0。
 
 ## 就地编辑：为什么"改几次不崩"和"不跳回首页"要单独讲
 

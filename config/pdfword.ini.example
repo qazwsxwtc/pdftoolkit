@@ -1,5 +1,5 @@
 ; Pdf-Toolkit 配置示例（文件名沿用 pdfword.ini）
-; 用法：复制为 pdfword.ini，放到 pdfword_ui.exe / pdfword_cli.exe 同目录。
+ ; 用法：复制为 pdfword.ini，放到 pdftoolkit.exe / pdfword_cli.exe 同目录。
 ; 查找优先级：显式传入 > 环境变量 > exe 同目录 ini > 注册表 > 常见安装目录 > PATH
 
 ; LibreOffice headless 入口，可写 exe 绝对路径，也可只写便携目录

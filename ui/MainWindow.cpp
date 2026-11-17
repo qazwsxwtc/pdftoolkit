@@ -2,6 +2,8 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include "AppIcon.h"
+
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -159,6 +161,7 @@ MainWindow::MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr
                        QWidget* parent)
     : QMainWindow(parent), converter_(std::move(converter)), jobs_(std::move(jobs)) {
     setWindowTitle(QStringLiteral("Pdf-Toolkit — PDF/Word 转换与预览"));
+    setWindowIcon(appIcon());
     // 允许把文件从资源管理器拖到窗口任意位置
     setAcceptDrops(true);
     centerOnScreen();

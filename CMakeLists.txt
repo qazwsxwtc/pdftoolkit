@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-# 产品名 Pdf-Toolkit；target 名仍是 pdfword_ui / pdfword_cli / pdfword_core（不改，避免动脚本与 web 壳）
+# 产品名 Pdf-Toolkit；界面产物文件名是 pdftoolkit.exe（target 名仍为 pdfword_ui，避免动脚本与 web 壳）
 project(Pdf-Toolkit VERSION 0.0.1 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------

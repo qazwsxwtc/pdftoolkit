@@ -153,7 +153,7 @@ cmake -S . -B build/mupdf -G "Visual Studio 17 2022" -A x64 `
 ### 许可（先说清楚，再决定要不要装）
 
 MuPDF 是 **AGPL-3.0 / Artifex 商业许可**双授权。本工程是 `unofficial-libmupdf` 的**静态库**
-（`libmupdf.lib`，约 73 MB），链接进 `pdfword_ui.exe` / `pdfword_cli.exe` / `pdfword.dll`。
+（`libmupdf.lib`，约 73 MB），链接进 `pdftoolkit.exe` / `pdfword_cli.exe` / `pdfword.dll`。
 这意味着：
 
 - 对外分发这些产物 → 整个软件要按 AGPL-3.0 给出完整源码（本工程源码 + 你对 MuPDF 的改动）；
