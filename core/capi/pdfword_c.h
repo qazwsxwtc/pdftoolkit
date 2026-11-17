@@ -154,6 +154,18 @@ PW_API int pw_pdf_replace_text(pw_context* ctx, const char* path, const char* ou
 PW_API int pw_pdf_replace_image(pw_context* ctx, const char* path, const char* output, int page_index,
                                 double x0, double y0, double x1, double y1, const char* image);
 
+// 按矩形就地改写一块文字（预览里"框住这块 → 改字"走这条）：只动 rect 里那块，
+// 不会把别处的同名文字一起改掉。delete_only 非 0 时只把原文盖掉、不写新字。
+// page_index 0 基，坐标是页面显示空间 pt（左上原点、y 向下）。
+PW_API int pw_pdf_replace_text_at(pw_context* ctx, const char* path, const char* output,
+                                  int page_index, double x0, double y0, double x1, double y1,
+                                  const char* text, int delete_only);
+
+// 在矩形里插入新文字（不铺白底、不碰原文）。font_size 传 0 表示按框高自适应。
+PW_API int pw_pdf_add_text_at(pw_context* ctx, const char* path, const char* output,
+                              int page_index, double x0, double y0, double x1, double y1,
+                              const char* text, double font_size);
+
 // 读取表单字段，JSON 数组（需 pw_free）：
 //   [{"name":"","kind":"text|checkbox|choice|signature|unknown","value":"","page":0,
 //     "rect":[x0,y0,x1,y1],"readOnly":false,"options":["..."]}]

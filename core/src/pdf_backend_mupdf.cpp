@@ -2893,6 +2893,84 @@ Result<std::vector<TextHit>> readFindText(fz_context* ctx, const fs::path& input
 }
 
 // ---------------------------------------------------------------------------
+// 取"字符中心落在矩形里"的文字：预览框一段文字，用它把原文带出来
+// -------------------------------------------------------------------
+
+std::string textInRectOfDoc(fz_context* ctx, pdf_document* doc, int pageIndex, const RectD& rect) {
+    std::string text;
+    const int pageCount = pdf_count_pages(ctx, doc);
+    if (pageIndex < 0 || pageIndex >= pageCount) return text;
+
+    fz_page* pg = nullptr;
+    fz_stext_page* stext = nullptr;
+    fz_try(ctx) {
+        pg = fz_load_page(ctx, reinterpret_cast<fz_document*>(doc), pageIndex);
+        stext = fz_new_stext_page_from_page(ctx, pg, nullptr);
+    }
+    fz_catch(ctx) { stext = nullptr; }
+    if (pg != nullptr) fz_drop_page(ctx, pg);
+    if (stext == nullptr) return text;
+
+    fz_try(ctx) {
+        for (fz_stext_block* block = stext->first_block; block != nullptr; block = block->next) {
+            if (block->type != FZ_STEXT_BLOCK_TEXT) continue;
+            for (fz_stext_line* line = block->u.t.first_line; line != nullptr; line = line->next) {
+                std::string lineText;
+                fz_rect prev = fz_empty_rect;
+                for (fz_stext_char* ch = line->first_char; ch != nullptr; ch = ch->next) {
+                    if (ch->c <= 0) continue;
+                    // stext 的 quad 已经是显示空间（和 searchTextInDoc 同理，不能再乘 ctm）
+                    const fz_rect dr = fz_rect_from_quad(ch->quad);
+                    const double cx = (double(dr.x0) + double(dr.x1)) * 0.5;
+                    const double cy = (double(dr.y0) + double(dr.y1)) * 0.5;
+                    if (cx < rect.x0 || cx > rect.x1 || cy < rect.y0 || cy > rect.y1) continue;
+                    if (!fz_is_empty_rect(prev)) {
+                        const double gap = double(dr.x0) - double(prev.x1);
+                        if (gap > double(ch->size) * 0.28) lineText.push_back(' ');
+                    }
+                    appendUtf8(&lineText, ch->c);
+                    prev = dr;
+                }
+                if (lineText.empty()) continue;  // 只有部分文字落进框，空行不往结果里塞
+                if (!text.empty()) text.push_back('\n');
+                text += lineText;
+            }
+        }
+    }
+    fz_catch(ctx) {
+        fz_drop_stext_page(ctx, stext);
+        return std::string();
+    }
+    fz_drop_stext_page(ctx, stext);
+    return text;
+}
+
+Result<std::string> readTextInRect(fz_context* ctx, const fs::path& input, int page,
+                                   const RectD& rect, const std::string& password) {
+    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, "矩形太小");
+
+    char msg[512] = {0};
+    bool failed = false;
+    pdf_document* doc = nullptr;
+    fz_try(ctx) { doc = openPdfForEdit(ctx, input, password); }
+    fz_catch(ctx) {
+        std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
+        failed = true;
+    }
+    if (failed) return Status::error(ErrorCode::IoError, msg);
+
+    std::string text;
+    fz_try(ctx) { text = textInRectOfDoc(ctx, doc, page, rect); }
+    fz_catch(ctx) {
+        std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
+        failed = true;
+    }
+    pdf_drop_document(ctx, doc);
+    if (failed) return Status::error(ErrorCode::IoError, msg);
+    return text;
+}
+
+// ---------------------------------------------------------------------------
 // 在已有文档某页追加一层“看得见的文字”（显示空间坐标，复用 OCR 的 Form XObject 套路）
 // -------------------------------------------------------------------
 
@@ -3205,6 +3283,88 @@ Status writeReplaceText(fz_context* ctx, const fs::path& input, const fs::path& 
     if (!failed) {
         fz_try(ctx) {
             // 同上：写回的新文字用的是非嵌入 CJK 字体，不做子集化（否则体积暴涨）
+            pdf_write_options wo = writeOptions();
+            pdf_save_document(ctx, doc, output.string().c_str(), &wo);
+        }
+        fz_catch(ctx) {
+            std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
+            failed = true;
+        }
+    }
+
+    if (fontRef != nullptr) pdf_drop_obj(ctx, fontRef);
+    if (font != nullptr) fz_drop_font(ctx, font);
+    pdf_drop_document(ctx, doc);
+
+    if (failed) return Status::error(ErrorCode::IoError, msg);
+    return Status::success();
+}
+
+// ---------------------------------------------------------------------------
+// 按矩形写字：预览里"框住这块 → 改字 / 加字"走这一条
+// -------------------------------------------------------------------
+//
+// 为什么不复用 replaceText：那条路是"按文本全篇查找替换"——
+//   * 框里的文字在文档里出现多次时，会把别处的同名文字一起改掉；
+//   * textInRect 取出来的文本经常带换行/断词，拿去 searchTextInDoc 未必命中，
+//     表现就是"框住了、点了确定、什么也没变"。
+// 这里只认矩形：白底盖掉这一块（deleteOnly 就到此为止），再按框宽写新字。
+// backdrop=false 时不铺白底，用于"加文字"——原内容一个字都不动。
+
+Status writeTextAtRect(fz_context* ctx, const fs::path& input, const fs::path& output, int pageIndex,
+                       const RectD& rect, const std::string& text, const ReplaceOptions& opts,
+                       bool backdrop, const std::string& password) {
+    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, "矩形为空");
+    if (!opts.deleteOnly && text.empty()) {
+        return Status::error(ErrorCode::InvalidArgument, "新文字为空（只想删就把 deleteOnly 打开）");
+    }
+
+    char msg[512] = {0};
+    bool failed = false;
+    pdf_document* doc = nullptr;
+    fz_font* font = nullptr;
+    pdf_obj* fontRef = nullptr;
+
+    fz_try(ctx) { doc = openPdfForEdit(ctx, input, password); }
+    fz_catch(ctx) {
+        std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
+        failed = true;
+    }
+    if (failed) return Status::error(ErrorCode::IoError, msg);
+
+    const int pageCount = pdf_count_pages(ctx, doc);
+    if (pageIndex < 0 || pageIndex >= pageCount) {
+        pdf_drop_document(ctx, doc);
+        return Status::error(ErrorCode::InvalidArgument,
+                             std::string("页码超出范围（这里要 0 基，文档共 ") + std::to_string(pageCount) +
+                                 " 页）");
+    }
+
+    TextPlacement p;
+    p.rect = rect;
+    p.text = opts.deleteOnly ? std::string() : text;
+    p.fontSize = opts.fontSize;
+    p.colorHex = opts.colorHex;
+    // 新文字比原框短时右边界收一点，避免被横向拉伸（与 writeReplaceText 同一套算法）
+    if (!opts.deleteOnly) {
+        const double size = p.fontSize > 0 ? p.fontSize : (rect.y1 - rect.y0);
+        const double want = estTextWidth(text, size);
+        if (want > 1.0 && want < rect.width()) p.rect.x1 = p.rect.x0 + want;
+    }
+
+    std::vector<TextPlacement> items{p};
+    fz_try(ctx) {
+        if (writeTextLayer(ctx, doc, pageIndex, items, font, fontRef, backdrop) < 0) {
+            fz_throw(ctx, FZ_ERROR_GENERIC, "写字失败（字体或页面资源没准备好）");
+        }
+    }
+    fz_catch(ctx) {
+        std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
+        failed = true;
+    }
+
+    if (!failed) {
+        fz_try(ctx) {
             pdf_write_options wo = writeOptions();
             pdf_save_document(ctx, doc, output.string().c_str(), &wo);
         }
@@ -3849,6 +4009,28 @@ public:
         });
     }
 
+    Status replaceTextAt(const fs::path& input, const fs::path& output, int page, const RectD& rect,
+                         const std::string& text, const ReplaceOptions& opts,
+                         const std::string& password) override {
+        if (input.empty() || output.empty()) {
+            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+        }
+        return withContext([&](fz_context* ctx) -> Status {
+            return writeTextAtRect(ctx, input, output, page, rect, text, opts, true, password);
+        });
+    }
+
+    Status addTextAt(const fs::path& input, const fs::path& output, int page, const RectD& rect,
+                     const std::string& text, const ReplaceOptions& opts,
+                     const std::string& password) override {
+        if (input.empty() || output.empty()) {
+            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+        }
+        return withContext([&](fz_context* ctx) -> Status {
+            return writeTextAtRect(ctx, input, output, page, rect, text, opts, false, password);
+        });
+    }
+
     Result<std::vector<OutlineItem>> outline(const fs::path& input,
                                              const std::string& password) override {
         if (input.empty()) return Status::error(ErrorCode::InvalidArgument, "输入路径为空");
@@ -3865,6 +4047,14 @@ public:
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeOutline(ctx, input, output, items, password);
+        });
+    }
+
+    Result<std::string> textInRect(const fs::path& input, int page, const RectD& rect,
+                                   const std::string& password) override {
+        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, "输入路径为空");
+        return withContext([&](fz_context* ctx) -> Result<std::string> {
+            return readTextInRect(ctx, input, page, rect, password);
         });
     }
 

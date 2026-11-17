@@ -31,7 +31,10 @@ public:
 
     const Config& config() const { return config_; }
     bool available() const;
+    // 真的去跑一次 soffice --version（会起进程，别放在启动路径上）
     std::string versionString() const;
+    // 只看已经探测到的版本（没探测过就是空），启动写日志用这个，不起进程
+    std::string cachedVersion() const { return versionCache_; }
 
     Status convert(const OfficeRequest& request, std::vector<fs::path>* outputs = nullptr);
     Status convertOne(const fs::path& input, const fs::path& outDir, const std::string& filter,

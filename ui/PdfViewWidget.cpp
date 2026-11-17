@@ -2,6 +2,8 @@
 
 #include <QRubberBand>
 
+#include <QContextMenuEvent>
+
 #include <QEvent>
 #include <QFontMetrics>
 #include <QFrame>
@@ -248,6 +250,25 @@ bool PdfViewWidget::eventFilter(QObject* watched, QEvent* event) {
         }
     }
 
+    // 页面上右键：把"第几页 + 屏幕坐标"发给主窗口，就地弹出编辑菜单
+    // （不按 selectMode 拦，随时可以右键改东西）
+    if (auto* label = qobject_cast<QLabel*>(watched)) {
+        if (event->type() == QEvent::ContextMenu) {
+            int index = -1;
+            for (std::size_t i = 0; i < pageLabels_.size(); ++i) {
+                if (pageLabels_[i] == label) {
+                    index = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (index >= 0) {
+                auto* ce = static_cast<QContextMenuEvent*>(event);
+                emit contextMenuRequested(index + 1, ce->globalPos());
+                return true;
+            }
+        }
+    }
+
     // 框选：拖动画一个矩形，松手把"页号 + 显示空间 pt 矩形"发出去
     if (selectMode_) {
         if (auto* label = qobject_cast<QLabel*>(watched)) {
@@ -282,6 +303,12 @@ bool PdfViewWidget::handleSelectEvent(QLabel* label, QEvent* event) {
             if (me->button() != Qt::LeftButton) return false;
             dragging_ = true;
             dragOrigin_ = me->position().toPoint();
+            // 换了一页（或文档刚重载过）就重建：橡皮筋的父是页 label，
+            // 挂在别的页上会把虚线框画到错误的页面上
+            if (rubber_ != nullptr && rubber_->parentWidget() != label) {
+                rubber_->deleteLater();
+                rubber_.clear();
+            }
             if (rubber_ == nullptr) {
                 rubber_ = new QRubberBand(QRubberBand::Rectangle, label);
                 rubber_->setStyleSheet(QStringLiteral("QRubberBand { border: 1px dashed #c0392b;"
@@ -376,6 +403,9 @@ void PdfViewWidget::closeDocument() {
 }
 
 void PdfViewWidget::clearPages() {
+    // 页 label 是橡皮筋的父对象：重建页面时橡皮筋跟着没了，指针一起清掉
+    rubber_.clear();
+    dragging_ = false;
     for (QLabel* label : pageLabels_) {
         canvasLayout_->removeWidget(label);
         label->deleteLater();
@@ -458,9 +488,12 @@ void PdfViewWidget::updateVisiblePages() {
     const int topLimit = visibleTop - kPrefetchPx;
     const int bottomLimit = visibleBottom + kPrefetchPx;
 
+    // 页位置按数据算（与 showPage 同源）：布局没跑完时 QLabel::geometry() 全是 0，
+    // 按它会把所有页都判成"在视口附近"，一次性渲染整份文档。
+    int top = kPageMargin;
     for (int i = 0; i < static_cast<int>(pageLabels_.size()); ++i) {
-        const QRect geometry = pageLabels_[i]->geometry();
-        const bool nearViewport = geometry.bottom() >= topLimit && geometry.top() <= bottomLimit;
+        const int height = qMax(1, int(pageHpt_[i] * zoom_ + 0.5));
+        const bool nearViewport = (top + height) >= topLimit && top <= bottomLimit;
         if (nearViewport && !pageRendered_[i]) {
             renderPageAt(i);
         } else if (!nearViewport && pageRendered_[i]) {
@@ -469,6 +502,7 @@ void PdfViewWidget::updateVisiblePages() {
             pageLabels_[i]->setText(QStringLiteral("第 %1 页").arg(i + 1));
             pageRendered_[i] = false;
         }
+        top += height + kPageGap;
     }
 }
 
@@ -502,12 +536,14 @@ void PdfViewWidget::syncCurrentPage() {
         target = pageCount_;
         // 取"探测点还没越过底部"的第一页：probe 落在页与页之间的缝里时算下一页，
         // 否则 showPage() 把页顶精确滚到视口顶部后，页码会被判成最后一页。
+        int top = kPageMargin;
         for (int i = 0; i < static_cast<int>(pageLabels_.size()); ++i) {
-            const QRect geometry = pageLabels_[i]->geometry();
-            if (probe < geometry.top() + geometry.height()) {
+            const int height = qMax(1, int(pageHpt_[i] * zoom_ + 0.5));
+            if (probe < top + height) {
                 target = i + 1;
                 break;
             }
+            top += height + kPageGap;
         }
     }
     if (target == currentPage_) return;
@@ -588,6 +624,22 @@ void PdfViewWidget::fitPage() {
     setZoom(qMin(availW / w, availH / h));
 }
 
+QLabel* PdfViewWidget::pageLabelAt(int page) const {
+    if (page < 1 || page > static_cast<int>(pageLabels_.size())) return nullptr;
+    return pageLabels_[static_cast<std::size_t>(page - 1)];
+}
+
+int PdfViewWidget::verticalScrollValue() const {
+    return scroll_ != nullptr ? scroll_->verticalScrollBar()->value() : 0;
+}
+
+void PdfViewWidget::setVerticalScrollValue(int value) {
+    if (scroll_ == nullptr) return;
+    scroll_->verticalScrollBar()->setValue(value);
+    updateVisiblePages();
+    syncCurrentPage();
+}
+
 void PdfViewWidget::showPage(int page1) {
     if (!document_ || pageLabels_.empty()) return;
     if (page1 < 1) page1 = 1;
@@ -596,9 +648,13 @@ void PdfViewWidget::showPage(int page1) {
 
     // 先把这一页渲染出来，再滚到它的页顶（不是滚到画布最上面）
     renderPageAt(page1 - 1);
-    const QRect geometry = pageLabels_[page1 - 1]->geometry();
-    // 让页顶正好落在视口顶部：竖直滚条按页顶再往上让出一点页间距
-    scroll_->verticalScrollBar()->setValue(qMax(0, geometry.top() - kPageMargin));
+    // 页顶位置按数据算，不读 QLabel::geometry()：刚 openDocument / buildPages 之后布局还没跑，
+    // geometry 全是 0，按它算就会滚回顶部——这就是"改完跳回首页"的来源。
+    int top = kPageMargin;
+    for (int i = 0; i + 1 < page1; ++i) {
+        top += qMax(1, int(pageHpt_[i] * zoom_ + 0.5)) + kPageGap;
+    }
+    scroll_->verticalScrollBar()->setValue(qMax(0, top - kPageMargin));
     updateVisiblePages();
     updateNavBar();
     emit pageChanged(currentPage_, pageCount_);

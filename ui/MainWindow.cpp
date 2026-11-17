@@ -6,9 +6,11 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
+#include <QCursor>
 #include <QDialogButtonBox>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
+#include <QDir>
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -114,6 +116,43 @@ bool editOutlineItem(QWidget* parent, QString* title, int* page, int pageCount) 
     return !title->isEmpty();
 }
 
+// 预览里"就地编辑"的动作编号：右键菜单项 -> 框选 -> 直接写文件
+enum InlineAction {
+    InlineNone = 0,
+    InlineHighlight = 1,
+    InlineUnderline = 2,
+    InlineStrikeOut = 3,
+    InlineSquiggly = 4,
+    InlineInk = 5,
+    InlineFreeText = 6,
+    InlineNote = 7,
+    InlineLink = 8,
+    InlineReplaceText = 9,
+    InlineDeleteText = 10,
+    InlineReplaceImage = 11,
+    InlineBookmark = 12,
+    InlineAddText = 13,
+    InlineCancel = -1,
+};
+
+QString inlineActionName(int action) {
+    switch (action) {
+        case InlineHighlight: return QStringLiteral("高亮");
+        case InlineUnderline: return QStringLiteral("下划线");
+        case InlineStrikeOut: return QStringLiteral("删除线");
+        case InlineSquiggly: return QStringLiteral("波浪线");
+        case InlineInk: return QStringLiteral("手绘标记");
+        case InlineFreeText: return QStringLiteral("文本框");
+        case InlineNote: return QStringLiteral("便签");
+        case InlineLink: return QStringLiteral("超链接");
+        case InlineReplaceText: return QStringLiteral("改这里的文字");
+        case InlineDeleteText: return QStringLiteral("删掉这里的文字");
+        case InlineReplaceImage: return QStringLiteral("换这里的图片");
+        case InlineAddText: return QStringLiteral("在框里加文字");
+        default: return QStringLiteral("编辑");
+    }
+}
+
 }  // namespace
 
 MainWindow::MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr<pw::JobQueue> jobs,
@@ -130,6 +169,10 @@ MainWindow::MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr
     createMenus();
 
     connect(fileList_, &QListWidget::itemDoubleClicked, this, &MainWindow::previewSelected);
+
+    // 预览里右键就出编辑菜单；框选完成直接落到 applyInlineEdit（只有"就地编辑"等着的框才算它的）
+    connect(viewer_, &PdfViewWidget::contextMenuRequested, this, &MainWindow::showPreviewMenu);
+    connect(viewer_, &PdfViewWidget::rectSelected, this, &MainWindow::applyInlineEdit);
 
     // core 的 JobQueue 在 worker 线程回调，这里用 QueuedConnection 切回 UI 线程
     jobs_->setListener([this](const pw::JobInfo& info) {
@@ -588,6 +631,422 @@ void MainWindow::bookmarkActivated(QTreeWidgetItem* item, int column) {
     viewer_->showPage(page);
 }
 
+// ---- 预览里的直接编辑 -------------------------------------------------------
+//
+// 之前每个编辑功能都是"开窗口 → 填页码和四个坐标 → 保存"，用户反馈"只能预览、改不了"。
+// 这里补一条就地路径：在页面上右键选动作，然后在页面上拖一个框，松手就写文件，
+// 写完把预览切到结果文件并留在同一页——改完立刻看得见，不用来回填坐标。
+
+void MainWindow::showPreviewMenu(int page, const QPoint& globalPos) {
+    if (viewer_ == nullptr || viewer_->currentPath().isEmpty()) {
+        appendLog(QStringLiteral("预览里还没有打开的 PDF，先双击一个 PDF 再改"));
+        return;
+    }
+
+    QMenu menu(this);
+    menu.setObjectName(QStringLiteral("previewMenu"));
+    auto add = [this, &menu](const QString& text, int action) {
+        QAction* act = menu.addAction(text);
+        act->setData(action);
+        return act;
+    };
+    add(QStringLiteral("高亮（拖框）"), InlineHighlight);
+    add(QStringLiteral("下划线（拖框）"), InlineUnderline);
+    add(QStringLiteral("删除线（拖框）"), InlineStrikeOut);
+    add(QStringLiteral("波浪线（拖框）"), InlineSquiggly);
+    add(QStringLiteral("手绘标记（拖框）"), InlineInk);
+    menu.addSeparator();
+    add(QStringLiteral("文本框注释…（拖框后写字）"), InlineFreeText);
+    add(QStringLiteral("便签…（拖框后写字）"), InlineNote);
+    add(QStringLiteral("超链接…（拖框后填网址）"), InlineLink);
+    menu.addSeparator();
+    add(QStringLiteral("改这里的文字…（拖框自动带出原文）"), InlineReplaceText);
+    add(QStringLiteral("删掉这里的文字（拖框）"), InlineDeleteText);
+    add(QStringLiteral("在这里加文字…（拖框后打字）"), InlineAddText);
+    add(QStringLiteral("换这里的图片…（拖框后选图）"), InlineReplaceImage);
+    menu.addSeparator();
+    add(QStringLiteral("在第 %1 页加书签").arg(page), InlineBookmark);
+    add(QStringLiteral("取消框选"), InlineCancel);
+
+    QAction* chosen = menu.exec(globalPos);
+    if (chosen == nullptr) return;
+    const int action = chosen->data().toInt();
+    if (action == InlineNone) return;
+    if (action == InlineCancel) {
+        inlineAction_ = 0;
+        viewer_->setSelectMode(false);
+        appendLog(QStringLiteral("已取消框选"));
+        return;
+    }
+    if (action == InlineBookmark) {
+        addBookmarkHere(page);
+        return;
+    }
+    startInlineEdit(action);
+}
+
+void MainWindow::startInlineEdit(int action) {
+    if (viewer_ == nullptr) return;
+    inlineAction_ = action;
+    viewer_->setSelectMode(true);
+    appendLog(QStringLiteral("「%1」：在第 %2 页（或其它页）上拖一个框，松手即写入；右键可取消")
+                  .arg(inlineActionName(action))
+                  .arg(viewer_->currentPage()));
+}
+
+void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
+    const int action = inlineAction_;
+    if (action == 0 || viewer_ == nullptr) return;  // 不是就地编辑在等框选（可能是某个编辑窗口的框选）
+    inlineAction_ = 0;
+    viewer_->setSelectMode(false);
+
+    const QString source = viewer_->currentPath();
+    if (source.isEmpty()) return;
+    // 重载之后要回到同一处：先把当前滚动位置记下来（closeDocument 会把滚动条归零）
+    const int savedScroll = viewer_->verticalScrollValue();
+
+    pw::RectD area;
+    area.x0 = rect.left();
+    area.y0 = rect.top();
+    area.x1 = rect.right();
+    area.y1 = rect.bottom();
+    if (area.empty()) {
+        appendLog(QStringLiteral("框太小了，什么也没改"));
+        return;
+    }
+
+    const QString output = inlineOutputPath(source);
+    // 结果就写回当前文件时（已经叫 xxx_已编辑.pdf），先落临时文件再换名：
+    // MuPDF 一边读输入一边截断同名输出会把源文件写坏。
+    const bool inPlace = QFileInfo(output).absoluteFilePath() == QFileInfo(source).absoluteFilePath();
+    const QFileInfo outInfo(output);
+    QString target = output;
+    if (inPlace) {
+        target = QDir(outInfo.absolutePath())
+                     .filePath(outInfo.completeBaseName() +
+                               QStringLiteral("_编辑中_%1.pdf")
+                                   .arg(QDateTime::currentMSecsSinceEpoch()));
+    }
+
+    auto backend = converter_->pdfBackend();
+    if (backend == nullptr) return;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    pw::Status st;
+    bool ran = true;
+    switch (action) {
+        case InlineHighlight:
+        case InlineUnderline:
+        case InlineStrikeOut:
+        case InlineSquiggly: {
+            pw::AnnotSpec spec;
+            spec.kind = action == InlineHighlight    ? pw::AnnotKind::Highlight
+                        : action == InlineUnderline  ? pw::AnnotKind::Underline
+                        : action == InlineStrikeOut  ? pw::AnnotKind::StrikeOut
+                                                     : pw::AnnotKind::Squiggly;
+            spec.page = page - 1;
+            spec.rect = area;
+            spec.opacity = action == InlineHighlight ? 0.55 : 1.0;
+            std::vector<pw::AnnotSpec> specs{spec};
+            st = backend->annotate(std::filesystem::path(source.toStdString()),
+                                   std::filesystem::path(target.toStdString()), specs);
+            break;
+        }
+        case InlineInk: {
+            pw::AnnotSpec spec;
+            spec.kind = pw::AnnotKind::Ink;
+            spec.page = page - 1;
+            spec.rect = area;
+            std::vector<pw::PointD> pts;
+            const int steps = 6;
+            for (int i = 0; i <= steps; ++i) {
+                pw::PointD pt;
+                pt.x = spec.rect.x0 + spec.rect.width() * i / steps;
+                pt.y = spec.rect.y0 + spec.rect.height() * (i % 2 == 0 ? 0.75 : 0.25);
+                pts.push_back(pt);
+            }
+            spec.inkPaths.push_back(pts);
+            std::vector<pw::AnnotSpec> specs{spec};
+            st = backend->annotate(std::filesystem::path(source.toStdString()),
+                                   std::filesystem::path(target.toStdString()), specs);
+            break;
+        }
+        case InlineFreeText:
+        case InlineNote: {
+            const QString body = QInputDialog::getMultiLineText(
+                this, action == InlineFreeText ? QStringLiteral("文本框内容") : QStringLiteral("便签内容"),
+                QStringLiteral("写在这块区域里的文字："), QString());
+            if (body.isEmpty()) {
+                ran = false;  // 取消
+                break;
+            }
+            pw::AnnotSpec spec;
+            spec.kind = action == InlineFreeText ? pw::AnnotKind::FreeText : pw::AnnotKind::Note;
+            spec.page = page - 1;
+            spec.rect = area;
+            spec.text = body.toStdString();
+            std::vector<pw::AnnotSpec> specs{spec};
+            st = backend->annotate(std::filesystem::path(source.toStdString()),
+                                   std::filesystem::path(target.toStdString()), specs);
+            break;
+        }
+        case InlineLink: {
+            const QString uri = QInputDialog::getText(
+                this, QStringLiteral("超链接目标"),
+                QStringLiteral("网址（https://…）或者要跳到的页码（第3页）："), QLineEdit::Normal,
+                QStringLiteral("https://"));
+            if (uri.trimmed().isEmpty()) {
+                ran = false;
+                break;
+            }
+            pw::LinkSpec spec;
+            spec.page = page - 1;
+            spec.rect = area;
+            spec.uri = uri.trimmed().toStdString();
+            st = backend->addLink(std::filesystem::path(source.toStdString()),
+                                  std::filesystem::path(target.toStdString()), spec);
+            break;
+        }
+        case InlineReplaceText:
+        case InlineDeleteText: {
+            // 先把框里的原文读出来（core 的 textInRect），省得用户照着页面手打
+            QString oldText;
+            auto got = backend->textInRect(std::filesystem::path(source.toStdString()), page - 1, area);
+            if (got.ok()) oldText = QString::fromStdString(got.value());
+            oldText.replace('\n', ' ').replace('\r', ' ').replace(QStringLiteral("  "), QStringLiteral(" "));
+            oldText = oldText.trimmed();
+            if (oldText.isEmpty()) {
+                ran = false;
+                QApplication::restoreOverrideCursor();
+                showMessageBox(this, QStringLiteral("框里没有文字"),
+                               QStringLiteral("这块区域取不到文字（可能是图片或扫描页）。"
+                                              "扫描页要先做 OCR；按整词替换可以用「查找替换…」。"));
+                return;
+            }
+            QString newText = oldText;
+            if (action == InlineReplaceText) {
+                if (inlineTextForTestSet_) {
+                    newText = inlineTextForTest_;
+                } else {
+                    newText = QInputDialog::getText(
+                        this, QStringLiteral("改这里的文字"),
+                        QStringLiteral("框里的原文已经带出来了（只改这一块，别处的同名文字不动）："),
+                        QLineEdit::Normal, oldText);
+                    if (newText.isNull() || newText.isEmpty()) {
+                        ran = false;
+                        break;
+                    }
+                }
+            }
+            pw::ReplaceOptions opts;
+            opts.deleteOnly = action == InlineDeleteText;
+            // 按矩形写回，不整篇搜 oldText：同一句在文档里出现多次时，全篇替换会把别处一起改掉；
+            // textInRect 取出来的文本带换行时也可能根本搜不到（原来的"改了没反应"就是这个）。
+            st = backend->replaceTextAt(std::filesystem::path(source.toStdString()),
+                                        std::filesystem::path(target.toStdString()), page - 1, area,
+                                        newText.toStdString(), opts);
+            break;
+        }
+        case InlineAddText: {
+            QString body = inlineTextForTestSet_ ? inlineTextForTest_
+                                                 : QInputDialog::getText(
+                                                       this, QStringLiteral("在这里加文字"),
+                                                       QStringLiteral("框就是文字落的位置（框高定字号，字太长会自动缩，不压扁）："),
+                                                       QLineEdit::Normal, QString());
+            if (body.isEmpty()) {
+                ran = false;
+                break;
+            }
+            pw::ReplaceOptions opts;
+            st = backend->addTextAt(std::filesystem::path(source.toStdString()),
+                                    std::filesystem::path(target.toStdString()), page - 1, area,
+                                    body.toStdString(), opts);
+            break;
+        }
+        case InlineReplaceImage: {
+            const QString img = QFileDialog::getOpenFileName(
+                this, QStringLiteral("选一张替换图片"), QString(),
+                QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"));
+            if (img.isEmpty()) {
+                ran = false;
+                break;
+            }
+            st = backend->replaceImage(std::filesystem::path(source.toStdString()),
+                                       std::filesystem::path(target.toStdString()), page - 1, area,
+                                       std::filesystem::path(img.toStdString()));
+            break;
+        }
+        default:
+            ran = false;
+            break;
+    }
+    QApplication::restoreOverrideCursor();
+
+    if (!ran) return;
+    if (!st.ok()) {
+        if (inPlace) QFile::remove(target);
+        showMessageBox(this, QStringLiteral("没改成"), QString::fromStdString(st.toString()));
+        appendLog(QStringLiteral("就地编辑失败: ") + QString::fromStdString(st.toString()));
+        return;
+    }
+
+    if (inPlace) {
+        // 原地更新：预览此刻还打开着这个文件（MuPDF 的 document 握着文件句柄），
+        // 不先放掉它，Windows 上的 remove / rename 会因为文件被占用而失败。
+        if (viewer_ != nullptr) viewer_->closeDocument();
+        const bool removed = QFile::remove(output);
+        if (!QFile::rename(target, output)) {
+            appendLog(QStringLiteral("换名失败（旧件删除%1），结果留在: %2")
+                          .arg(removed ? QStringLiteral("成功") : QStringLiteral("没成功"))
+                          .arg(target));
+            return;
+        }
+    }
+
+    appendLog(QStringLiteral("已在预览里改好「%1」（第 %2 页）-> %3")
+                  .arg(inlineActionName(action))
+                  .arg(page)
+                  .arg(QFileInfo(output).fileName()));
+    reloadAfterInline(output, page, savedScroll);
+}
+
+QString MainWindow::runPreviewTextEdit(int page, const QRectF& rect, const QString& text,
+                                       bool deleteOnly, double fontSize, bool backdrop,
+                                       const QString& what) {
+    if (viewer_ == nullptr) return QString();
+    const QString source = viewer_->currentPath();
+    if (source.isEmpty()) {
+        appendLog(QStringLiteral("预览里还没有打开的 PDF，先双击一个 PDF 再改"));
+        return QString();
+    }
+    if (rect.width() < 1.0 || rect.height() < 1.0) {
+        appendLog(QStringLiteral("框太小了，什么也没改"));
+        return QString();
+    }
+    auto backend = converter_ ? converter_->pdfBackend() : nullptr;
+    if (backend == nullptr) return QString();
+    // 重载之后要回到同一处：滚动位置先记下（不是只按页码跳回页顶）
+    const int savedScroll = viewer_->verticalScrollValue();
+
+    pw::RectD area;
+    area.x0 = rect.left();
+    area.y0 = rect.top();
+    area.x1 = rect.right();
+    area.y1 = rect.bottom();
+
+    const QString output = inlineOutputPath(source);
+    const bool inPlace = QFileInfo(output).absoluteFilePath() == QFileInfo(source).absoluteFilePath();
+    const QFileInfo outInfo(output);
+    QString target = output;
+    if (inPlace) {
+        target = QDir(outInfo.absolutePath())
+                     .filePath(outInfo.completeBaseName() +
+                               QStringLiteral("_编辑中_%1.pdf").arg(QDateTime::currentMSecsSinceEpoch()));
+    }
+
+    pw::ReplaceOptions opts;
+    opts.deleteOnly = deleteOnly;
+    opts.fontSize = fontSize;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    pw::Status st = backdrop
+                        ? backend->replaceTextAt(std::filesystem::path(source.toStdString()),
+                                                 std::filesystem::path(target.toStdString()),
+                                                 page - 1, area, text.toStdString(), opts)
+                        : backend->addTextAt(std::filesystem::path(source.toStdString()),
+                                             std::filesystem::path(target.toStdString()), page - 1,
+                                             area, text.toStdString(), opts);
+    QApplication::restoreOverrideCursor();
+
+    if (!st.ok()) {
+        if (inPlace) QFile::remove(target);
+        showMessageBox(this, QStringLiteral("没改成"), QString::fromStdString(st.toString()));
+        appendLog(QStringLiteral("就地编辑失败: ") + QString::fromStdString(st.toString()));
+        return QString();
+    }
+    if (inPlace) {
+        // 先把预览放掉再换名：MuPDF 的 document 握着文件句柄，Windows 上删不掉也改不了名
+        if (viewer_ != nullptr) viewer_->closeDocument();
+        const bool removed = QFile::remove(output);
+        if (!QFile::rename(target, output)) {
+            appendLog(QStringLiteral("换名失败（旧件删除%1），结果留在: %2")
+                          .arg(removed ? QStringLiteral("成功") : QStringLiteral("没成功"))
+                          .arg(target));
+            return QString();
+        }
+    }
+
+    appendLog(QStringLiteral("已在预览里%1（第 %2 页）-> %3").arg(what).arg(page).arg(QFileInfo(output).fileName()));
+    reloadAfterInline(output, page, savedScroll);
+    return output;
+}
+
+QString MainWindow::previewReplaceText(int page, const QRectF& rect, const QString& text,
+                                       bool deleteOnly) {
+    return runPreviewTextEdit(page, rect, text, deleteOnly, 0.0, true,
+                              deleteOnly ? QStringLiteral("删掉这块文字") : QStringLiteral("改好这块文字"));
+}
+
+QString MainWindow::previewAddText(int page, const QRectF& rect, const QString& text, double fontSize) {
+    return runPreviewTextEdit(page, rect, text, false, fontSize, false, QStringLiteral("加了文字"));
+}
+
+void MainWindow::previewInlineEditForTest(int action, int page, const QRectF& rect,
+                                          const QString& text) {
+    inlineAction_ = action;
+    inlineTextForTest_ = text;
+    inlineTextForTestSet_ = true;
+    applyInlineEdit(page, rect);
+    inlineTextForTestSet_ = false;
+    inlineTextForTest_ = QString();
+    inlineAction_ = 0;
+}
+
+QString MainWindow::inlineOutputPath(const QString& source) {
+    const QFileInfo info(source);
+    const QString stem = info.completeBaseName();
+    // 已经叫 xxx_已编辑.pdf：继续改同一个（走临时文件换名，不会写坏）
+    if (stem.endsWith(QStringLiteral("_已编辑"))) return info.absoluteFilePath();
+    return QDir(info.absolutePath()).filePath(stem + QStringLiteral("_已编辑.pdf"));
+}
+
+void MainWindow::reloadAfterInline(const QString& output, int page, int scrollValue) {
+    if (viewer_ == nullptr) return;
+    QString error;
+    if (!viewer_->openDocument(output, &error)) {
+        appendLog(QStringLiteral("刷新预览失败: ") + error);
+        return;
+    }
+    // 重载会把滚动条归零：先按页跳回去，再按改之前记下的滚动值还原到同一处（不是只回页顶）
+    if (page > 1) viewer_->showPage(page);
+    if (scrollValue >= 0) viewer_->setVerticalScrollValue(scrollValue);
+    // 书签面板跟着换到新文件，免得对着旧文档的目录继续改
+    refreshBookmarkTree(output);
+    // 结果文件补进待处理列表，后面合并/拆分可以直接选它
+    addPathsToFileList(QStringList{output});
+}
+
+void MainWindow::addBookmarkHere(int page) {
+    if (bookmarkTree_ == nullptr || viewer_ == nullptr) return;
+    if (bookmarkPath_.isEmpty()) {
+        appendLog(QStringLiteral("先预览一个 PDF，再往它的目录里加条目"));
+        return;
+    }
+
+    auto* item = new QTreeWidgetItem();
+    const QString title = QStringLiteral("第 %1 页").arg(page);
+    item->setText(0, title);
+    item->setText(1, QString::number(page));
+    item->setToolTip(0, title);
+    item->setToolTip(1, QStringLiteral("跳到第 %1 页").arg(page));
+    item->setData(0, Qt::UserRole, page);
+    bookmarkTree_->addTopLevelItem(item);
+    bookmarkTree_->setCurrentItem(item);
+    bookmarkTree_->scrollToItem(item);
+    appendLog(QStringLiteral("已在书签面板加了一条「%1」；要改名点「修改」，改完点「应用」写回 PDF")
+                  .arg(title));
+}
+
 void MainWindow::createMenus() {
     // ---- 文件 ----
     auto* fileMenu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
@@ -626,6 +1085,11 @@ void MainWindow::createMenus() {
     editMenu->addAction(QStringLiteral("添加超链接…"), this, &MainWindow::openLink);
     editMenu->addAction(QStringLiteral("查找替换…"), this, &MainWindow::openFindReplace);
     editMenu->addAction(QStringLiteral("表单处理…"), this, &MainWindow::openForm);
+    editMenu->addSeparator();
+    // 不进窗口、直接在页面上框一下就改：和预览右键同一个菜单
+    editMenu->addAction(QStringLiteral("在预览上直接编辑（右键）…"), this, [this] {
+        showPreviewMenu(viewer_ != nullptr ? viewer_->currentPage() : 1, QCursor::pos());
+    });
 
     // ---- 视图：多级菜单，文件列表（显示/隐藏 + 靠左/靠右）+ 日志窗口（显示/隐藏）+ 缩放 ----
     auto* viewMenu = menuBar()->addMenu(QStringLiteral("视图(&V)"));

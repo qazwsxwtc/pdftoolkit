@@ -15,13 +15,17 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
+#include <QRectF>
 #include <QGuiApplication>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMimeData>
+#include <QMouseEvent>
+#include <QRubberBand>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QProgressBar>
@@ -897,6 +901,201 @@ int main(int argc, char** argv) {
 
             // 面板在书签与"目录"之间只有一棵树：这个文档本来就有目录，所以上面这些也是"编辑既有目录"
             shoot(&window, "main-window-bookmarks");
+        }
+
+        // ---- 预览里就地编辑：框住一块就改、拖个框打字就加，写完预览自动重载 ----
+        {
+            const std::filesystem::path workDir =
+                std::filesystem::path(dst.toStdString()).parent_path();
+            const std::filesystem::path srcCopy = workDir / "inline_smoke.pdf";
+            QFile::remove(QString::fromStdString(srcCopy.string()));
+            check(QFile::copy(sample, QString::fromStdString(srcCopy.string())),
+                  "把样本复制成就地编辑用的副本（不碰原样本）");
+
+            auto* view = window.findChild<PdfViewWidget*>();
+            QString openErr;
+            const QString srcPath = QString::fromStdString(srcCopy.string());
+            check(view != nullptr && view->openDocument(srcPath, &openErr),
+                  "预览里打开了就地编辑用的副本");
+            if (view != nullptr) view->showPage(2);
+            QApplication::processEvents();
+
+            // 第 2 页 "instructions for" 那一块（和 CLI find 出来的矩形是同一个）
+            const QRectF block(315.0, 203.3, 64.5, 14.3);
+            const QString outPath = window.previewReplaceText(2, block, "SMOKE-REPLACED", false);
+            check(!outPath.isEmpty() && QFileInfo::exists(outPath),
+                  "预览里框住一块就能改字出件（不用开窗口填坐标）");
+            check(QFileInfo(outPath).fileName() == QStringLiteral("inline_smoke_已编辑.pdf"),
+                  "改完的文件叫 <原名>_已编辑.pdf");
+            check(view != nullptr && view->currentPath() == outPath, "改完预览自动切到结果文件");
+            check(view != nullptr && view->currentPage() == 2, "改完预览还停在原来那一页");
+
+            auto hits = converter->pdfBackend()->findText(
+                std::filesystem::path(outPath.toStdString()), std::string("SMOKE-REPLACED"));
+            check(hits.ok() && !hits.value().empty(), "改进去的新文字能在结果文件里搜到");
+            check(hits.ok() && !hits.value().empty() && hits.value().front().page == 1,
+                  "新文字落在第 2 页（0 基页号 1）");
+
+            // 只该动这一块：拿第 9 页文本对比，必须一字不差
+            bool bothOpen = false;
+            std::string t9orig;
+            std::string t9edit;
+            {
+                // 用完就放：这两个文档握着文件句柄，不放掉后面“原地加字”会删不掉旧件
+                auto docOrig = converter->pdfBackend()->open(std::filesystem::path(srcCopy.string()));
+                auto docEdit = converter->pdfBackend()->open(std::filesystem::path(outPath.toStdString()));
+                bothOpen = docOrig.ok() && docEdit.ok();
+                if (bothOpen) {
+                    docOrig.value()->pageText(8, &t9orig);
+                    docEdit.value()->pageText(8, &t9edit);
+                }
+            }
+            check(bothOpen && t9orig == t9edit, "改第 2 页一块，第 9 页文本一字未动");
+
+            // 加文字：拖个框直接打字
+            const QString addPath = window.previewAddText(3, QRectF(60.0, 600.0, 260.0, 22.0),
+                                                          QStringLiteral("加字冒烟 ABC 123"));
+            if (addPath.isEmpty() || !QFileInfo::exists(addPath)) {
+                if (auto* lv = window.findChild<QPlainTextEdit*>(QStringLiteral("logView"))) {
+                    std::printf("---- UI 日志尾部 ----\n%s\n",
+                                lv->toPlainText().right(800).toLocal8Bit().constData());
+                }
+            }
+            check(!addPath.isEmpty() && QFileInfo::exists(addPath),
+                  "拖个框直接打字就能往页面上加文字");
+            auto added = converter->pdfBackend()->findText(std::filesystem::path(addPath.toStdString()),
+                                                           std::string("加字冒烟"));
+            check(added.ok() && added.value().size() == 1,
+                  "加进去的文字能在结果文件里搜到（中文也认）");
+
+            // 连改 12 次，走真实链路（右键选动作 → 拖框 → 写回），只跳过输入框：
+            // 崩溃、跳回首页、视图位置乱跑都在这一轮里压出来
+            const int stressPageBefore = view != nullptr ? view->currentPage() : 0;
+            const int stressScrollBefore = view != nullptr ? view->verticalScrollValue() : -1;
+            int stressOk = 0;
+            for (int i = 0; i < 12; ++i) {
+                const QString tag = QStringLiteral("压测%1").arg(i + 1);
+                // 9 = 改字，13 = 加字，10 = 删字（与 MainWindow 里的 InlineAction 一致）
+                const int action = (i % 3 == 0) ? 9 : (i % 3 == 1 ? 13 : 10);
+                window.previewInlineEditForTest(action, 3, QRectF(60.0, 560.0 + i * 18.0, 200.0, 18.0), tag);
+                QApplication::processEvents();
+                const QString out =
+                    QString::fromStdString((workDir / "inline_smoke_已编辑.pdf").string());
+                if (QFileInfo::exists(out)) ++stressOk;
+            }
+            check(stressOk == 12, "同一页连改 12 次（改字/加字/删字交替）不崩、每次都出件");
+            check(view != nullptr && view->currentPage() == stressPageBefore,
+                  "连改之后页码没变（没跳回首页）");
+            check(view != nullptr && view->verticalScrollValue() == stressScrollBefore,
+                  "连改之后滚动位置没变（视图停在原处）");
+            auto stressHits = converter->pdfBackend()->findText(
+                workDir / "inline_smoke_已编辑.pdf", std::string("\u538b\u6d4b11"));
+            check(stressHits.ok() && !stressHits.value().empty(),
+                  "第 11 次加进去的字也能在产物里搜到");
+
+            // 真实交互顺序压测：每轮先"拖个框"（这会建 QRubberBand，父是页 label），
+            // 再写回重载（页 label 整批重建）。上一版第二轮拖框就会踩到已销毁的橡皮筋而崩。
+            if (view != nullptr) view->showPage(3);
+            QApplication::processEvents();
+            int rectHits = 0;
+            if (view != nullptr) {
+                QObject::connect(view, &PdfViewWidget::rectSelected,
+                                 [&rectHits](int, const QRectF&) { ++rectHits; });
+            }
+            const int dragScrollBefore = view != nullptr ? view->verticalScrollValue() : -1;
+            int dragCycles = 0;
+            for (int i = 0; i < 12; ++i) {
+                QLabel* pageLabel = view->pageLabelAt(3);
+                if (pageLabel != nullptr) {
+                    view->setSelectMode(true);
+                    const QPointF a(40.0, 40.0);
+                    const QPointF b(140.0, 90.0);
+                    QMouseEvent press(QEvent::MouseButtonPress, a, pageLabel->mapToGlobal(a.toPoint()),
+                                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                    QMouseEvent move(QEvent::MouseMove, b, pageLabel->mapToGlobal(b.toPoint()),
+                                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+                    QMouseEvent rel(QEvent::MouseButtonRelease, b, pageLabel->mapToGlobal(b.toPoint()),
+                                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                    QApplication::sendEvent(pageLabel, &press);
+                    QApplication::sendEvent(pageLabel, &move);
+                    QApplication::sendEvent(pageLabel, &rel);
+                    QApplication::processEvents();
+                    ++dragCycles;
+                }
+                window.previewInlineEditForTest(i % 2 == 0 ? 9 : 13, 3,
+                                                QRectF(60.0, 400.0 + i * 20.0, 200.0, 18.0),
+                                                QStringLiteral("框后%1").arg(i + 1));
+                QApplication::processEvents();
+            }
+            check(dragCycles == 12, "拖框 12 轮都真的走到了（每轮都能建起选择框）");
+            check(rectHits == 12, "12 轮拖框松手都发出了框选信号（每轮都真的走完框选）");
+            check(view != nullptr && view->verticalScrollValue() == dragScrollBefore,
+                  "拖框 + 写回交替 12 轮后滚动位置仍未变");
+
+            // 完整交互压测：和真人操作同一条路——startInlineEdit 进框选态 → 拖框 →
+            // 选中就触发 applyInlineEdit → 弹模态输入框（用定时器代填并回车）→ 写回重载。
+            // 这一轮做的是"再拖一次框"，正是上一版踩到已销毁橡皮筋的地方。
+            int dialogCycles = 0;
+            int dialogFilled = 0;
+            for (int i = 0; i < 6; ++i) {
+                const QString body = QStringLiteral("对话%1").arg(i + 1);
+                if (!QMetaObject::invokeMethod(&window, "startInlineEdit", Q_ARG(int, 13))) break;
+                QApplication::processEvents();
+                // invokeMethod 只负责把 inlineAction_ 设好；这里再显式确认框选态已开，
+                // 把"没弹框"和"事件没送到"两件事分开
+                if (view != nullptr) view->setSelectMode(true);
+
+                QLabel* pageLabel = view->pageLabelAt(3);
+                if (pageLabel == nullptr) break;
+                // 模态输入框一出来就填好并回车（30ms 足够让 exec 进入嵌套事件循环）
+                // 输入框是模态的，只能在它的嵌套事件循环里代填：每 50ms 试一次
+                auto* poll = new QTimer(&window);
+                poll->setInterval(50);
+                poll->setProperty("tries", 0);
+                QObject::connect(poll, &QTimer::timeout, poll, [body, poll, &dialogFilled]() {
+                    const int tries = poll->property("tries").toInt() + 1;
+                    poll->setProperty("tries", tries);
+                    for (QWidget* w : QApplication::topLevelWidgets()) {
+                        auto* dlg = qobject_cast<QInputDialog*>(w);
+                        if (dlg == nullptr || !dlg->isVisible()) continue;
+                        if (auto* edit = dlg->findChild<QLineEdit*>()) edit->setText(body);
+                        dlg->accept();
+                        ++dialogFilled;
+                        poll->stop();
+                        poll->deleteLater();
+                        return;
+                    }
+                    if (tries > 40) {
+                        poll->stop();
+                        poll->deleteLater();
+                    }
+                });
+                poll->start();
+                const QPointF a(60.0, 200.0 + i * 24.0);
+                const QPointF b(260.0, 218.0 + i * 24.0);
+                QMouseEvent press(QEvent::MouseButtonPress, a, pageLabel->mapToGlobal(a.toPoint()),
+                                  Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                QMouseEvent move(QEvent::MouseMove, b, pageLabel->mapToGlobal(b.toPoint()), Qt::NoButton,
+                                 Qt::LeftButton, Qt::NoModifier);
+                QMouseEvent rel(QEvent::MouseButtonRelease, b, pageLabel->mapToGlobal(b.toPoint()),
+                                Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(pageLabel, &press);
+                QApplication::sendEvent(pageLabel, &move);
+                QApplication::sendEvent(pageLabel, &rel);
+                QApplication::processEvents();
+                ++dialogCycles;
+            }
+            check(rectHits == 18, "6 轮完整交互也是每轮都真的走完了框选");
+            check(dialogFilled == 6, "模态输入框 6 轮都被真正填好并回车");
+            check(dialogCycles == 6, "走完整交互（拖框 → 模态输入框 → 写回）连做 6 轮不崩");
+            auto dialogHits = converter->pdfBackend()->findText(
+                workDir / "inline_smoke_已编辑.pdf", std::string("对话6"));
+            check(dialogHits.ok() && !dialogHits.value().empty(),
+                  "第 6 轮通过输入框加的字也进了产物");
+            check(view != nullptr && view->verticalScrollValue() == dragScrollBefore,
+                  "6 轮交互压测后滚动位置还没变");
+
+            shoot(&window, "main-window-inline-edit");
         }
 
         // ---- 视图状态持久化：藏起来的面板、挪过去的停靠侧、收起的导航条，重开一次还在 ----

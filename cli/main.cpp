@@ -67,6 +67,10 @@ void printUsage() {
         "  pdfword find <in.pdf> <needle> [--page N]\n"
         "  pdfword replace <in.pdf> <out.pdf> <find> <replace> [--delete-only] [--size N] [--color C] [--limit N] [--case]\n"
         "  pdfword replace-image <in.pdf> <out.pdf> <page> <x0,y0,x1,y1> <image>\n"
+  "  pdfword replace-at <in.pdf> <out.pdf> <page> <x0,y0,x1,y1> <text> [--delete-only] [--color #RRGGBB] [--font-size N]\n"
+  "                                      按框改字：只动这一块，不整篇搜同一个词\n"
+  "  pdfword add-text   <in.pdf> <out.pdf> <page> <x0,y0,x1,y1> <text> [--color #RRGGBB] [--font-size N]\n"
+  "                                      往框里加字（不铺白底、不碰原文）\n"
         "  pdfword outline <in.pdf> [--txt out.txt]      打印 / 导出书签目录\n"
         "  pdfword set-outline <in.pdf> <out.pdf> <level:page:title> ... [--from out.txt]\n"
         "      level 从 0 起（0 = 顶级），page 从 1 起（0 = 没有跳转）；不给项等于清空目录\n"
@@ -934,6 +938,74 @@ int cmdReplaceImage(const std::vector<std::string>& args) {
     return 0;
 }
 
+// replace-at <in.pdf> <out.pdf> <page> <rect> <text> [--delete-only] [--color ..] [--font-size ..]
+int cmdReplaceTextAt(const std::vector<std::string>& args) {
+    std::vector<std::string> pos;
+    ReplaceOptions opts;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--delete-only") {
+            opts.deleteOnly = true;
+        } else if (args[i] == "--color" && i + 1 < args.size()) {
+            opts.colorHex = args[++i];
+        } else if (args[i] == "--font-size" && i + 1 < args.size()) {
+            opts.fontSize = std::stod(args[++i]);
+        } else {
+            pos.push_back(args[i]);
+        }
+    }
+    if (pos.size() < 5) return printUsage(), 1;
+    const int page = std::stoi(pos[2]) - 1;
+    if (page < 0) {
+        std::cerr << "页号从 1 开始\n";
+        return 1;
+    }
+    const RectD rect = parseRectStr(pos[3]);
+    if (rect.empty()) {
+        std::cerr << "区域为空，格式应为 x0,y0,x1,y1\n";
+        return 1;
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->replaceTextAt(pos[0], pos[1], page, rect, pos[4], opts,
+                                                      gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << (opts.deleteOnly ? "已删掉这块文字" : "已改好这块文字") << " -> " << pos[1] << "\n";
+    return 0;
+}
+
+// add-text <in.pdf> <out.pdf> <page> <rect> <text> [--color ..] [--font-size ..]
+int cmdAddText(const std::vector<std::string>& args) {
+    std::vector<std::string> pos;
+    ReplaceOptions opts;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--color" && i + 1 < args.size()) {
+            opts.colorHex = args[++i];
+        } else if (args[i] == "--font-size" && i + 1 < args.size()) {
+            opts.fontSize = std::stod(args[++i]);
+        } else {
+            pos.push_back(args[i]);
+        }
+    }
+    if (pos.size() < 5) return printUsage(), 1;
+    const int page = std::stoi(pos[2]) - 1;
+    if (page < 0) {
+        std::cerr << "页号从 1 开始\n";
+        return 1;
+    }
+    const RectD rect = parseRectStr(pos[3]);
+    if (rect.empty()) {
+        std::cerr << "区域为空，格式应为 x0,y0,x1,y1\n";
+        return 1;
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->addTextAt(pos[0], pos[1], page, rect, pos[4], opts,
+                                                  gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << "已在框里加了文字 -> " << pos[1] << "\n";
+    return 0;
+}
+
 // outline <in.pdf> [--txt out.txt]
 //   打印目录树（缩进表示层级）；给了 --txt 就连同层级、页码一起导出成文本
 int cmdOutline(const std::vector<std::string>& args) {
@@ -1089,6 +1161,8 @@ int dispatch(const std::string& cmd, std::vector<std::string>& args) {
     if (cmd == "find") return cmdFind(args);
     if (cmd == "replace") return cmdReplace(args);
     if (cmd == "replace-image") return cmdReplaceImage(args);
+    if (cmd == "replace-at") return cmdReplaceTextAt(args);
+    if (cmd == "add-text") return cmdAddText(args);
     if (cmd == "outline") return cmdOutline(args);
     if (cmd == "set-outline") return cmdSetOutline(args);
     if (cmd == "info" && !args.empty()) return cmdInfo(args[0]);

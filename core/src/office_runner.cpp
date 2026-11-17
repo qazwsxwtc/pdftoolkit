@@ -209,7 +209,17 @@ std::string OfficeRunner::versionString() const {
         versionCache_ = "未配置";
         return versionCache_;
     }
-    std::vector<std::string> args = {"--version"};
+    // 和真正转换用同一套无窗口参数：裸 --version 会去碰默认 profile，
+    // 首次运行会弹 LibreOffice 自己的启动向导/提示窗口
+    std::vector<std::string> args;
+    args.push_back("--headless");
+    args.push_back("--invisible");
+    args.push_back("--norestore");
+    args.push_back("--nofirststartwizard");
+    args.push_back("--nolockcheck");
+    args.push_back("--nodefault");
+    args.push_back("-env:UserInstallation=" + toFileUrl(isolatedProfileDir()));
+    args.push_back("--version");
     fs::path logFile = config_.workDir / "lo-version.log";
     std::error_code ec;
     fs::create_directories(config_.workDir, ec);

@@ -118,11 +118,22 @@ public:
                         const std::string&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
     }
+    Status replaceTextAt(const fs::path&, const fs::path&, int, const RectD&, const std::string&,
+                         const ReplaceOptions&, const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status addTextAt(const fs::path&, const fs::path&, int, const RectD&, const std::string&,
+                     const ReplaceOptions&, const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
     Result<std::vector<OutlineItem>> outline(const fs::path&, const std::string&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
     }
     Status setOutline(const fs::path&, const fs::path&, const std::vector<OutlineItem>&,
                       const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Result<std::string> textInRect(const fs::path&, int, const RectD&, const std::string&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
     }
 };

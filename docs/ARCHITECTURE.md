@@ -214,6 +214,70 @@ PageTransform + 逆变换        <- ctm / inv / mediabox / dispbox，全部换�
   字号先按框高 0.82 起，再按"实际字宽 / 框宽"折减，最低 4pt。
   代价写在 README 里：**底层旧文字仍在**，需要彻底抹除要等 redact 修好。
 
+## 预览里就地编辑的三条约定
+
+1. **按矩形，不按文字**。`replaceTextAt` / `addTextAt` 只认页号 + 矩形，不碰全篇搜索。
+   早先的 `InlineReplaceText` 调的是 `replaceText(oldText, newText)`，同一句话出现多次会把别处一起改；
+   `textInRect` 取出的文本又常带换行/断词，`searchTextInDoc` 未必命中——表现就是"框住了、点了确定、什么也没变"。
+   现在 `textInRect` 只用来给输入框当默认值。
+
+2. **两种写法的区别只在 backdrop**。`replaceTextAt` 先铺白底再写字（`writeTextLayer(..., backdrop=true)`，
+   白块只向下外扩 2pt，不切上一行降部），`addTextAt` 不铺底、不碰原文（`backdrop=false`）。
+   两者共用 `writeTextAtRect`：`openPdfForEdit` → 页码越界报 `InvalidArgument`（提示这里要 0 基）→
+   `estTextWidth` 收窄右边界（与 `writeReplaceText` 同一套算法，避免横向拉伸）→ `writeTextLayer` → `pdf_save_document`
+   （`writeOptions()`，不做字体子集化）。字号 `fontSize>0` 用之，否则按框高 0.82 倍；超框宽缩字号（最小 4pt），不压扁。
+
+3. **产物是派生件，且换名之前必须放开预览**。框架层是"白底覆盖 + 写字"，底层旧文字还在 PDF 里
+   （`find` 计数不降、`text` 多出新行），这是覆盖法的固有代价，不是 bug。
+   结果写 `<原名>_已编辑.pdf`；已经在改 `_已编辑.pdf` 时先落 `_编辑中_<毫秒>.pdf` 再换名盖回去——
+   MuPDF 的 `document` 抓着文件句柄，Windows 上不先 `viewer_->closeDocument()` 就删不掉旧件
+   （冒烟里就是被两个 `open()` 出来的 `IPdfDocument` 副本卡住过）。
+
+## 启动的时候不碰 LibreOffice
+
+`capabilityReport()` 以前会调 `OfficeRunner::versionString()`，而那实际是跑一次
+`soffice --version`：双击程序就先起一个 LibreOffice 进程（首次运行还会弹它自己的启动向导），
+主窗口还得等它退出，日志里才有一行"LibreOffice 版本"。
+
+现在分两件事：
+
+- **启动只读配置**。`capabilityReport()` 用 `OfficeRunner::cachedVersion()`（纯读缓存，
+  没探测过就返回空），日志写"LibreOffice 版本: 未检测（第一次转换时自动获取）"，
+  状态栏仍然只显示第一行后端状态。`versionString()` 保留给真正需要版本的场合。
+- **真探测也走无窗口参数**。版本探测补齐 `--headless --invisible --norestore
+  --nofirststartwizard --nolockcheck --nodefault -env:UserInstallation=<workDir>/lo-profile`，
+  和 `convert()` 用同一套——不然裸 `--version` 会去碰默认 profile，把启动向导再拉出来一遍。
+
+实测：启动 `pdfword_ui.exe` 后 4 秒内 `soffice` / `soffice.bin` 进程数为 0。
+
+## 就地编辑：为什么"改几次不崩"和"不跳回首页"要单独讲
+
+这三件事都是"重载预览"带出来的，改完字要重新打开文档才能看到效果，而重载会整批重建页 label：
+
+1. **页顶不能读 `QLabel::geometry()`**。`openDocument → buildPages` 之后布局还没跑，所有页的
+   geometry 都是 0；`showPage()` 拿它算页顶，滚动条被设成 0，于是每次改完都跳回第 1 页。
+   现在按 `pageHpt_` 累加算页顶（`kPageMargin + Σ(页高 + kPageGap)`）；
+   `updateVisiblePages()` 和 `syncCurrentPage()` 同改——它们原来也按 geometry 判"在不在视口附近"，
+   布局未生效时会把全部页判成可见、整份渲染。
+2. **页码不够，还要还原滚动值**。`reloadAfterInline(output, page, scrollValue)`：
+   在 `closeDocument()` **之前**取 `verticalScrollValue()`，重载完 `showPage(page)` 再
+   `setVerticalScrollValue(saved)`。只回到"第几页"是不够的——同一页里改的是上半还是下半，
+   视图会差几百像素。
+3. **框选橡皮筋必须用 `QPointer`**。`QRubberBand` 的父对象是页 label（虚线框才能跟着页面缩放走），
+   而重载时 `clearPages()` 会把旧 label `deleteLater()`，父没了子跟着销毁，`QRubberBand* rubber_`
+   就悬空了；下一次拖框写的是已释放对象（use-after-free）。
+   反向验证：临时退回裸指针、并去掉 `clearPages()` 里的清理，同一条 6 轮"拖框 → 写回"压测里
+   5 轮都数不到页面上的选择框（press 全落在已销毁的那个橡皮筋上）；修复版 6/6 正常。
+   另外 press 时发现 `rubber_->parentWidget() != label` 就重建，顺带修了"跨页拖框把框画在上一页"。
+
+测试侧的两个坑：重载后旧 label 还挂在树上等 `deleteLater`（`findChildren` 能数到两百多个
+`pageItem`），所以要按页取控件——`PdfViewWidget::pageLabelAt(page)`；手工 `QMouseEvent` 的
+press 用 `LeftButton/LeftButton`、move 用 `NoButton/LeftButton`、release 用 `LeftButton/NoButton`，
+配合元调用 `startInlineEdit(13)` 和定时器代填模态 `QInputDialog`，才能把真实交互链跑全。
+
+对应冒烟三段压测：连改 12 次（改字/加字/删字交替）、拖框 + 写回 12 轮、完整交互 6 轮，
+每段都断言"页码没变 / 滚动位置没变 / 产物里能搜到新字"。
+
 ## 书签 / 目录的三条约定
 
 ```

@@ -20,6 +20,7 @@ class QLabel;
 class QListWidget;
 class QMimeData;
 class QPlainTextEdit;
+class QRectF;
 class QProgressBar;
 class QSplitter;
 class QTreeWidget;
@@ -39,6 +40,13 @@ public:
     MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr<pw::JobQueue> jobs,
                QWidget* parent = nullptr);
     ~MainWindow() override;
+
+    // 预览就地编辑的"无交互"入口：UI 里走右键菜单 + 拖框，这两条给冒烟和脚本直接调。
+    // 返回值是产物文件路径，失败返回空串。rect 是页面显示空间 pt（左上原点、y 向下）。
+    QString previewReplaceText(int page, const QRectF& rect, const QString& text, bool deleteOnly);
+    QString previewAddText(int page, const QRectF& rect, const QString& text, double fontSize = 0.0);
+    // 冒烟用：走真实"选了动作 → 拖框 → 写回"的全链路，只是不弹输入框（文字由参数给）
+    void previewInlineEditForTest(int action, int page, const QRectF& rect, const QString& text);
 
 private slots:
     void addFiles();
@@ -63,6 +71,10 @@ private slots:
     void openFindReplace();
     void openForm();
     void showCapabilityReport();
+    // ---- 预览里"就地编辑"：右键选动作 → 在页面上拖一下 → 直接写回并刷新预览 ----
+    void showPreviewMenu(int page, const QPoint& globalPos);
+    void startInlineEdit(int action);
+    void applyInlineEdit(int page, const QRectF& rect);
 
 protected:
     // 从资源管理器把文件拖到窗口任意位置都能入列
@@ -123,6 +135,17 @@ private:
     // 双击条目跳到对应页
     void bookmarkActivated(QTreeWidgetItem* item, int column);
 
+    // ---- 预览里的直接编辑 ----
+    // 就地编辑的输出路径：a.pdf → a_已编辑.pdf；已经是 a_已编辑.pdf 就原地更新（走临时文件换名）
+    static QString inlineOutputPath(const QString& source);
+    // 预览里"按矩形写字"的统一流程：出件、原地换名、写日志、重载预览
+    QString runPreviewTextEdit(int page, const QRectF& rect, const QString& text, bool deleteOnly,
+                               double fontSize, bool backdrop, const QString& what);
+    // 写完把预览切到新文件并留在原来那一页（顺手把新文件补进待处理列表）
+    void reloadAfterInline(const QString& output, int page, int scrollValue = -1);
+    // 在预览里直接加一条书签（标题默认"第 N 页"）
+    void addBookmarkHere(int page);
+
     std::shared_ptr<pw::Converter> converter_;
     std::shared_ptr<pw::JobQueue> jobs_;
 
@@ -153,4 +176,9 @@ private:
     int lastLogHeight_ = 140;
     // 当前打开的「编辑与批注」窗口。非模态，弹着的时候主窗口照常能点、预览照常能滚
     QPointer<QDialog> editDialog_;
+    // 预览里正等着框选的那个编辑动作（0 = 没有；取值见 MainWindow.cpp 的 InlineAction）
+    int inlineAction_ = 0;
+    // 冒烟用：非空时 applyInlineEdit 不弹输入框，直接用这里的文本
+    QString inlineTextForTest_;
+    bool inlineTextForTestSet_ = false;
 };

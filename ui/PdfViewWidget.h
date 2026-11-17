@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QPointer>
 #include <QRect>
+#include <QRubberBand>
 #include <QWidget>
 #include <memory>
 #include <vector>
@@ -51,6 +53,12 @@ public:
 
     // 当前预览的 PDF 路径（没打开时为空），供"抽取页面"等操作确定源文件
     QString currentPath() const { return path_; }
+    // 竖直滚动位置：就地编辑重载同一文档的派生件时，用来把视图留在原处
+    // 按页取当前这块页面的控件（1 起）。重载后旧 label 还挂在树上等 deleteLater，
+    // 用 findChildren 会挑到旧的，所以需要这个明确的入口。
+    QLabel* pageLabelAt(int page) const;
+    int verticalScrollValue() const;
+    void setVerticalScrollValue(int value);
     // 已打开的文档句柄，页面编辑器直接复用，避免再解析一遍
     std::shared_ptr<pw::IPdfDocument> document() const { return document_; }
 
@@ -75,6 +83,8 @@ signals:
     void zoomChanged(double zoom);
     // 框选完成（page 为 1 基页号，rect 为显示空间 pt）
     void rectSelected(int page, QRectF rect);
+    // 在某一页上右键（page 1 基；globalPos 给主窗口弹就地编辑菜单用）
+    void contextMenuRequested(int page, QPoint globalPos);
 
 protected:
     // Ctrl + 滚轮缩放：滚轮事件落在 QScrollArea 的 viewport 上，只能靠事件过滤器拦
@@ -131,7 +141,9 @@ private:
     bool selectMode_ = false;
     bool dragging_ = false;
     QPoint dragOrigin_;
-    QRubberBand* rubber_ = nullptr;
+    // 橡皮筋的父对象是页 label，而 label 会随重载整批重建：
+    // 必须用 QPointer，否则指向已销毁的 QRubberBand（上一版就是"连改几次崩掉"的根子）
+    QPointer<QRubberBand> rubber_;
     int selPage_ = 1;
     QRectF selRect_;
 };

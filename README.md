@@ -114,7 +114,7 @@ pwsh -File scripts\run-ui.ps1 -Build skeleton   # 骨架界面，只能转 docx/
 .\build\mupdf\bin\pdfword_ui_smoke.exe ".\build\mupdf\out-test\enc_888888.pdf" 888888 ".\build\mupdf\out-test\smoke_pw.docx"
 ```
 
-输出全是 `[ OK ]` 且退出码 0 即通过（**171 项断言 + 25 张截图**）。带密码样本时多 3 项任务断言、
+输出全是 `[ OK ]` 且退出码 0 即通过（**195 项断言 + 26 张截图**）。带密码样本时多 3 项任务断言、
 少的 2 项“合法范围”校验会换成 1 项“加密件读不到页数必须拦下”。覆盖点：
 
 - 主窗口 6 个顶级菜单（文件 / 转换 / PDF 工具 / 编辑与批注 / 视图 / 帮助）；窗口标题以 `Pdf-Toolkit` 开头；启动位置居中（与主屏可用区中心差 ≤12px）；
@@ -176,13 +176,15 @@ main-window-nav-collapsed / main-window-bookmarks / main-window-bookmark-hidden 
 merge-dialog / extract-dialog / convert-dialog / page-editor-dialog /
 metadata-dialog / security-dialog / compress-dialog / watermark-dialog / watermark-dialog-image /
 imgtopdf-dialog / ocr-dialog / annot-dialog / link-dialog / find-replace-dialog / replace-image-dialog /
-form-dialog` **二十五张图**可以直接打开看布局，
+form-dialog` **二十六张图**可以直接打开看布局，
 不需要真实桌面（`main-window-scroll` 是滚到第 1、2 页接缝处的样子——中间那道浅灰缝就是页与页的分界，
 `main-window-log-hidden` 是隐藏日志后预览铺满的样子，
 `main-window-zoom` 是放大到 300% 后能看到右/下滚动条的样子，
 `main-window-nav-collapsed` 是底部导航条收起后只剩“◂ 展开”一颗按钮的样子，
 `main-window-bookmarks` 是右侧「书签 / 目录」面板展开的样子（两列、多级缩进、三行按钮），
-`main-window-bookmark-hidden` 是视图菜单里点“隐藏书签目录”之后的样子——面板没了，预览区变宽）
+`main-window-bookmark-hidden` 是视图菜单里点“隐藏书签目录”之后的样子——面板没了，预览区变宽，
+`main-window-inline-edit` 是在预览里就地改完一块字之后的样子：预览已经切到 `<原名>_已编辑.pdf`，
+还停在原来那一页，日志写着“已在预览里改好这块文字（第 2 页）”）
 （`QWidget::grab()` 自己渲染，绕开了本机 CU 截图拿不到窗口的问题）。`watermark-dialog*`
 两张分别是文字页签和图片页签，改界面时用来对照。
 
@@ -206,7 +208,7 @@ form-dialog` **二十五张图**可以直接打开看布局，
 | PDF 工具(&P) | 合并 PDF… / 拆分 PDF… / 抽取页面… / 页面编辑… ‖ 元数据… / 加密 / 解密… / 压缩… / 水印… / 图片转 PDF… / OCR 文字识别…（前四项是页面级操作，分线后六项是文档级操作，每个都开独立窗口） | 见下表 |
 | 编辑与批注(&E) | 修改文字、图片… / 注释批注… / 添加超链接… / 查找替换… / 表单处理… | 见下节「编辑与批注菜单项」 |
 | 视图(&V) | **两级子菜单**：`文件列表 ▸`（显示文件列表 / 隐藏文件列表 ‖ 靠左 / 靠右）+ `日志窗口 ▸`（显示 / 隐藏）+ `书签目录 ▸`（显示书签目录 / 隐藏书签目录）+ `缩放 ▸`（放大一档 / 缩小一档 ‖ 适应宽度 / 适应窗口 / 实际大小 100%） | 文件面板显隐与停靠位置（也可直接把面板拖成浮动窗口）；日志窗口显隐；书签面板显隐；缩放与适应 |
-| 帮助(&H) | 能力报告 | 弹出后端 / LibreOffice / MuPDF 版本诊断 |
+| 帮助(&H) | 能力报告 | 弹出后端 / LibreOffice / OCR 诊断（LibreOffice 版本取自缓存，还没转换过就写"未检测"） |
 
 **PDF 工具菜单项**
 
@@ -242,6 +244,40 @@ form-dialog` **二十五张图**可以直接打开看布局，
 自动填进窗口，窗口自己弹回来。30 秒不拖框会自动返回，不会把窗口卡在隐藏状态；
 框选前会核对「预览里打开的是不是正在编辑的这个文件」，不一致直接提示、不给拖，免得坐标落到别的页面上。
 想精确指定坐标时也可以完全不框选，直接在四个坐标框里输入（显示空间 pt，左上原点、y 向下）。
+
+**在预览里直接改**（不用开窗口、不用填坐标：在页面上右键选一项，拖个框就完事）
+
+| 右键菜单项 | 拖框之后 | 打哪里 |
+| --- | --- | --- |
+| `高亮` / `下划线` / `删除线` / `波浪线` | 直接标上，不打扰 | `annotate` |
+| `手绘标记` | 沿框画一笔 | `annotate`（ink） |
+| `文本框注释…` / `便签…` | 弹一行输入，写字（**这是批注，不是正文**） | `annotate` |
+| `超链接…` | 读「地址」字段（`第3页` / `https://…`） | `addLink` |
+| `改这里的文字…` | 输入框**默认带出框里的原文**，改完回车写回 | `replaceTextAt` |
+| `删掉这里的文字（拖框）` | 白底盖掉这一块，不写字 | `replaceTextAt`（`deleteOnly`） |
+| `在这里加文字…（拖框后打字）` | 直接打字插进正文（中文、空格、数字都行） | `addTextAt` |
+| `换这里的图片…` | 选图，等比铺进框里 | `replaceImage` |
+| `加书签（记到这一页）` | 往「书签 / 目录」面板里加一条 | `setOutline` |
+
+- 拖框是**页面显示空间**的矩形（`PdfViewWidget` 按当前缩放换算成 pt），所以 150% 缩放、滚到第 9 页都不会错位；
+- 写回是**按矩形**，不是按文字全篇搜索：同一句话在文档里出现好几次时，只动你框住的那一块
+  （`textInRect` 取出的文本只用来给输入框当默认值，带换行/断词也不影响写回）；
+- 结果落在 `<原名>_已编辑.pdf`（源文件不动），写完自动重载预览、停在原来那一页，
+  同时把这个派生件补进待处理列表，后面合并/拆分可以直接选它；已经在改 `_已编辑.pdf` 时，
+  这一轮先写到 `_编辑中_<毫秒>.pdf` 再换名盖回去——**预览此刻正打开那个文件**，Windows 上删不掉，
+  所以换名前会先把预览放掉（`viewer_->closeDocument()`）；
+- 加文字的框高就是字号（`fontSize=0` 时按框高 0.82 倍算），字比框宽会缩字号，不横向压扁；
+- **代价（按框改字的固有代价，别当 bug）**：白底只是"视觉覆盖"，底层旧文字还在 PDF 里，
+  `find` / 复制粘贴仍能捞到旧词（要真抹掉得走 redact，这类文档上 redact 会连带删掉别的字形）。
+  真正想清干净，用「查找替换」的"只删除"或页面编辑重做那一页。
+
+同一套能力在别处也能调，方便脚本和 web 壳：
+
+| 层 | 入口 |
+| --- | --- |
+| core | `IPdfBackend::replaceTextAt(input, output, page, rect, text, opts, password)`、`addTextAt(...)`（`page` 是 0 基，`opts.deleteOnly` 只盖不写，`opts.fontSize=0` 自适应） |
+| CLI | `pdfword_cli replace-at <in> <out> <页号1基> "x0,y0,x1,y1" "新文字" [--delete-only] [--color #rrggbb] [--font-size N]`、`add-text <in> <out> <页号> "rect" "文字" [--font-size N]` |
+| C ABI | `pw_pdf_replace_text_at(ctx, in, out, page, x0, y0, x1, y1, text, delete_only, color, font_size, password)`、`pw_pdf_add_text_at(...)` |
 
 **书签 / 目录面板**（`视图 → 书签目录`，默认在右侧，可以拖到左侧或拖成独立窗口）
 
@@ -333,10 +369,12 @@ PDF 里的“书签”和“目录”是同一个东西（文档里那棵 `/Outl
 | 能力 | 走哪个模块 | 状态 |
 | --- | --- | --- |
 | 工程编译 / Qt 界面启动 | ui | ✅ 已验证（窗口标题 `Pdf-Toolkit — PDF/Word 转换与预览`，启动居中） |
-| 界面菜单化重构（六入口进菜单 + 可停靠文件面板 + 三个弹窗） | ui | ✅ 已验证（`pdfword_ui_smoke` **171 项断言全过**；`QWidget::grab()` 出的 25 张界面图逐个核对过布局） |
+| 界面菜单化重构（六入口进菜单 + 可停靠文件面板 + 三个弹窗） | ui | ✅ 已验证（`pdfword_ui_smoke` **195 项断言全过**；`QWidget::grab()` 出的 26 张界面图逐个核对过布局） |
+| 预览里直接改（右键 → 拖框 → 改字 / 加字 / 批注 / 超链接 / 换图） | core + CLI + C ABI + ui | ✅ 已验证（`iw8ben.pdf` 第 2 页框住 `instructions for` 改成 `SMOKE-REPLACED`：产物 `<原名>_已编辑.pdf`、`findText` 命中第 2 页、**第 9 页文本逐字未变**；再往第 3 页空白处拖框打 `加字冒烟 ABC 123`，中文能搜到；CLI `replace-at` / `add-text` 与 C ABI 同名函数各跑一遍） |
 | 启动居中 / 产品名 Pdf-Toolkit | ui | ✅ 已验证（实测窗口落在 (128,32)，与可用区中心一致；标题、CLI 首行、docx 元数据 creator 均为 Pdf-Toolkit） |
 | 书签 / 目录管理（读 / 新增 / 修改 / 删除 / 移动 / 导出） | core + CLI + C ABI + ui | ✅ 已验证（core 侧 `fz_load_outline` 拍平后页码统一用 `fz_page_number_from_location`（外链解析不到记 0，不再靠 `uri == nullptr` 判空）、写回用 outline iterator 删旧树再逐条插；`iw8ben.pdf` 读回 12 条含 3 层、写入 5 条含中文再读回层级与页码一致，pypdf 交叉核对 `/Outlines` 的 `/First`–`/Next` 链确实是真实 `/Dest`；CLI `outline` / `set-outline`、C ABI `pw_pdf_outline` / `pw_pdf_set_outline` 各跑一遍；UI 侧见上面冒烟断言） |
 | 视图状态持久化（文件列表 / 日志 / 书签面板显隐、停靠侧、日志高度、窗口几何） | ui / QSettings | ✅ 已验证（关窗写 `%APPDATA%\Pdf-Toolkit\Pdf-Toolkit.ini`，重开同一进程内造第二个窗口，隐藏的面板与靠右停靠都回来了） |
+| 预览就地编辑的连续操作（连改 12 次 / 拖框写回 12 轮 / 完整交互 6 轮，都不崩、不跳回首页） | ui / PdfViewWidget + MainWindow | ✅ 已验证（三件事：页顶改按 `pageHpt_` 累加算（不再读布局未生效的 `QLabel::geometry()`）、`reloadAfterInline` 带 `scrollValue` 还原滚动位置、橡皮筋 `QPointer` + `clearPages()` 清理 + 跨页重建；反向验证见 `docs/ARCHITECTURE.md`） |
 | 预览连续滚动（所有页竖排 + 懒渲染 + 滚动反推当前页） | ui / PdfViewWidget | ✅ 已验证（9 页与 63 页文档各跑一遍冒烟：页数对齐、滚到底当前页自动跳末页、只渲染视口 ±400px 内的页；63 页整轮 106 项断言 10s 跑完） |
 | DOCX 生成（OOXML + zip） | core / DocxWriter | ✅ 已验证（python-docx 能解析：段落样式、转义都对） |
 | 配置探测 / 能力报告 | core / Config | ✅ 已验证（`pdfword_cli.exe doctor` 三项都绿） |
@@ -354,7 +392,7 @@ PDF 里的“书签”和“目录”是同一个东西（文档里那棵 `/Outl
 | PDF 水印（图片） | core / MuPDF 后端 | ✅ 已验证（透明底 PNG 居中/平铺：9 页 190,688 B → 193,149 B（居中，每页一张）与 194,670 B（平铺，每页 30 格）；82 页 4,859,511 B → 4,934,195 B，用时 0.3 s；输出里只有 1 个 `/Image` + 1 个 `/SMask`，平铺不会复制像素） |
 | OCR 文字识别（可检索 PDF + 纯文本） | core / Windows.Media.Ocr（C++/WinRT） | ✅ 已验证（图片型 PDF 单页 460 个词：字号/基线/横向缩放逐词算准，文字层用 `3 Tr` 于是**渲染像素 0 差异**；`text` 能从输出 PDF 里抽出“iw8ben.pdf”“添加文件”这些词，说明 Ctrl+F 与选中复制可用；3 页中文扫描件 1.2 s（约 0.4 s/页），识别出“数字图像处理 / 第一讲 / 绪论 / 提纲 / 基本概念” |
 | pdf → docx（文字重排，版式有损） | MuPDF + DocxWriter | ✅ 已验证（82 页 → 726 个非空段落，中文正常） |
-| C ABI 供 web 壳调用 | core / capi | ✅ 已验证（Python `ctypes` 加载 `pdfword.dll`：建 context、取能力报告、错误码与 last_error 都对；26 个页面/文档级/编辑批注/书签函数逐个调通（批注 `pw_pdf_annotate`、超链接 `pw_pdf_add_link`、查找 `pw_pdf_find_text`、替换 `pw_pdf_replace_text`、换图 `pw_pdf_replace_image`、表单 `pw_pdf_form_fields` / `pw_pdf_form_fill` / `pw_pdf_form_create`、书签 `pw_pdf_outline` / `pw_pdf_set_outline` 都在其中），图片水印 `pw_pdf_image_watermark`、带位置的 `pw_pdf_watermark_position`、`pw_pdf_ocr` / `pw_ocr_capability` 都在其中） |
+| C ABI 供 web 壳调用 | core / capi | ✅ 已验证（Python `ctypes` 加载 `pdfword.dll`：建 context、取能力报告、错误码与 last_error 都对；28 个页面/文档级/编辑批注/书签函数逐个调通（批注 `pw_pdf_annotate`、超链接 `pw_pdf_add_link`、查找 `pw_pdf_find_text`、替换 `pw_pdf_replace_text`、换图 `pw_pdf_replace_image`、表单 `pw_pdf_form_fields` / `pw_pdf_form_fill` / `pw_pdf_form_create`、书签 `pw_pdf_outline` / `pw_pdf_set_outline`、按矩形改字 `pw_pdf_replace_text_at` / `pw_pdf_add_text_at` 都在其中），图片水印 `pw_pdf_image_watermark`、带位置的 `pw_pdf_watermark_position`、`pw_pdf_ocr` / `pw_ocr_capability` 都在其中） |
 
 已知限制（不是 bug，是当前实现的取舍）：
 

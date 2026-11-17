@@ -246,7 +246,13 @@ std::string Converter::capabilityReport() const {
     if (!backend_->available()) oss << "  原因: " << backend_->unavailableReason() << "\n";
     oss << "OCR 引擎: " << ocrCapabilityReport() << "\n";
     oss << describeLibreOffice(config_) << "\n";
-    if (office_.available()) oss << "LibreOffice 版本: " << office_.versionString() << "\n";
+    if (office_.available()) {
+        // 启动时不跑 soffice --version：那会拉起一个 LibreOffice 进程（首次还会弹它自己的向导），
+        // 白白拖慢开窗。版本等第一次真正转换时再取。
+        const std::string cached = office_.cachedVersion();
+        oss << "LibreOffice 版本: "
+            << (cached.empty() ? std::string("未检测（第一次转换时自动获取）") : cached) << "\n";
+    }
     oss << "工作目录: " << config_.workDir.string() << "\n";
     return oss.str();
 }

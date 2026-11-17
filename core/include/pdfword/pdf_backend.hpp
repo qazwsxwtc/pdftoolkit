@@ -155,6 +155,21 @@ public:
                                 const RectD& rect, const fs::path& imagePath,
                                 const std::string& password = std::string()) = 0;
 
+    // 按矩形就地改写：只处理 page（0 基）上 rect 里那一块——先铺白底盖掉原文再写新字，
+    // 不动这一块以外的东西，也不去整篇搜同一个词（与 replaceText 的分工就在这里）。
+    // opts.deleteOnly 时只盖不写，等于"删掉这块文字"。
+    virtual Status replaceTextAt(const fs::path& input, const fs::path& output, int page,
+                                 const RectD& rect, const std::string& text,
+                                 const ReplaceOptions& opts = ReplaceOptions(),
+                                 const std::string& password = std::string()) = 0;
+
+    // 在矩形里插入新文字：不铺白底、不碰原文，用于"预览里拖个框直接打字"。
+    // opts.fontSize = 0 时按框高自适应；新文字比框宽时缩字号，而不是横向压扁。
+    virtual Status addTextAt(const fs::path& input, const fs::path& output, int page,
+                             const RectD& rect, const std::string& text,
+                             const ReplaceOptions& opts = ReplaceOptions(),
+                             const std::string& password = std::string()) = 0;
+
     // 书签 / 目录（/Outlines）。读出来是扁平列表（level 表示层级，page 1 基）。
     // 没有目录的文档返回空表，不是错误。
     virtual Result<std::vector<OutlineItem>> outline(const fs::path& input,
@@ -165,6 +180,12 @@ public:
     virtual Status setOutline(const fs::path& input, const fs::path& output,
                               const std::vector<OutlineItem>& items,
                               const std::string& password = std::string()) = 0;
+
+    // 取某页"落在给定矩形内"的文字（字符中心落在框里才算）。
+    // 预览里在页面上框一段文字，用它把原文带出来，改字时不用再手打一遍。
+    // 框里没有文字返回空串，不算错误。
+    virtual Result<std::string> textInRect(const fs::path& input, int page, const RectD& rect,
+                                           const std::string& password = std::string()) = 0;
 };
 
 // 工厂：链接了 MuPDF 时返回 MuPDF 后端，否则返回 stub 后端（所有操作返回 BackendMissing）。

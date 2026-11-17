@@ -823,6 +823,40 @@ int pw_pdf_replace_image(pw_context* ctx, const char* path, const char* output, 
     return st.ok() ? 0 : fail(ctx, st);
 }
 
+int pw_pdf_replace_text_at(pw_context* ctx, const char* path, const char* output, int page_index,
+                           double x0, double y0, double x1, double y1, const char* text,
+                           int delete_only) {
+    if (ctx == nullptr || path == nullptr || output == nullptr || text == nullptr) return 1;
+
+    RectD rect;
+    rect.x0 = x0;
+    rect.y0 = y0;
+    rect.x1 = x1;
+    rect.y1 = y1;
+    ReplaceOptions opts;
+    opts.deleteOnly = delete_only != 0;
+    Status st = ctx->converter->pdfBackend()->replaceTextAt(
+        fs::path(path), fs::path(output), page_index, rect, text, opts, ctx->pdfPassword);
+    return st.ok() ? 0 : fail(ctx, st);
+}
+
+int pw_pdf_add_text_at(pw_context* ctx, const char* path, const char* output, int page_index,
+                       double x0, double y0, double x1, double y1, const char* text,
+                       double font_size) {
+    if (ctx == nullptr || path == nullptr || output == nullptr || text == nullptr) return 1;
+
+    RectD rect;
+    rect.x0 = x0;
+    rect.y0 = y0;
+    rect.x1 = x1;
+    rect.y1 = y1;
+    ReplaceOptions opts;
+    opts.fontSize = font_size;
+    Status st = ctx->converter->pdfBackend()->addTextAt(
+        fs::path(path), fs::path(output), page_index, rect, text, opts, ctx->pdfPassword);
+    return st.ok() ? 0 : fail(ctx, st);
+}
+
 int pw_pdf_form_fields(pw_context* ctx, const char* path, char** out_json) {
     if (ctx == nullptr || path == nullptr || out_json == nullptr) return -1;
 

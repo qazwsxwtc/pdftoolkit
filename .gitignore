@@ -1,19 +1,86 @@
-# 构建
+# ---- 构建目录与 IDE ----
 build/
 out/
 *.sln
 *.vcxproj*
 .vs/
+.vscode/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+compile_commands.json
 
-# 输出
+# ---- 编译产物（不入库）----
 bin/
 obj/
+*.dll
+*.exe
+*.pdb
+*.lib
+*.exp
+*.ilk
+*.obj
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.manifest
+*.tlog
+*.lastbuildstate
+*.idb
+*.ipdb
+*.iobj
 
-# 本地配置（含机器相关路径，不入库）
+# ---- Qt 生成物 ----
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.moc
+*.rcc
+object_script.*
+
+# ---- 分发副本（windeployqt 拷出来的 exe / dll / plugins 都不入库）----
+publish/
+
+# ---- 冒烟截图与测试产物 ----
+ui-shots/
+ui-shots-*/
+out-test/
+
+# ---- 运行时派生件 ----
+*_已编辑.pdf
+*_编辑中_*.pdf
+lo-profile/
+lo-version.log
+lo-convert.log
+
+# ---- 本地配置（含机器相关路径，不入库）----
 pdfword.ini
+pdfword.config.ini
 !config/pdfword.ini.example
 
-# 杂项
+# ---- 临时文件 / 备份 / 打包 ----
 *.user
 *.tmp
+*.temp
 *.log
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+~$*
+Thumbs.db
+.DS_Store
+*.7z
+*.zip
+*.rar
+*.msi
+*.nsi
+*.dmp
+*.crash
