@@ -1,4 +1,4 @@
-// PdfWord CLI —— 证明 core 与界面解耦：同一套 core，命令行也能完整跑通。
+// Pdf-Toolkit CLI —— 证明 core 与界面解耦：同一套 core，命令行也能完整跑通。
 // 用法见 printUsage()。
 
 #include <algorithm>
@@ -29,7 +29,7 @@ std::string gPassword;
 
 void printUsage() {
     std::cout <<
-        "PdfWord CLI\n"
+        "Pdf-Toolkit CLI（可执行文件仍名 pdfword_cli.exe）\n"
         "  pdfword doctor\n"
         "  pdfword convert <src> [dst] --to pdf|docx\n"
         "  pdfword info <file.pdf>\n"
@@ -50,7 +50,26 @@ void printUsage() {
         "  pdfword encrypt <in.pdf> <out.pdf> <user-pwd> [owner-pwd] [--allow print,copy,...]\n"
         "  pdfword decrypt <in.pdf> <out.pdf>             （加密件需 --password）\n"
         "  pdfword compress <in.pdf> <out.pdf>           字体子集 + 流压缩 + 垃圾回收\n"
-        "  pdfword watermark <in.pdf> <out.pdf> <text> [opacity 0..1]\n"
+        "  pdfword watermark <in.pdf> <out.pdf> <text> [--opacity 0..1] [--position top-left|center|tile-diagonal|...]\n"
+        "  pdfword imgwatermark <in.pdf> <out.pdf> <image> [--scale 0.05..1] [--opacity O] [--tile]\n"
+        "  pdfword ocr <in.pdf> <out.pdf|-> <out.txt|-> [--lang zh-Hans-CN]\n"
+        "     识别扫描件，写不可见文字层（能 Ctrl+F / 选中复制）并导出纯文本；“-”表示跳过该输出\n"
+        "\n"
+        "  编辑与批注类：\n"
+        "  pdfword annotate <in.pdf> <out.pdf> <kind> <page> <x0,y0,x1,y1> [--text T] [--color #RRGGBB]\n"
+        "                   [--author A] [--opacity 0..1] [--ink \"x,y;x,y|...\"]\n"
+        "      kind = highlight|underline|strikeout|squiggly|note|freetext|ink（坐标 pt，页面左上原点）\n"
+        "  pdfword link <in.pdf> <out.pdf> <page> <x0,y0,x1,y1> <uri>\n"
+        "      uri = https://… 或页内跳转 #page=3（也认 “第3页”）\n"
+        "  pdfword form-fields <in.pdf>                    列出可填写字段\n"
+        "  pdfword form-fill <in.pdf> <out.pdf> name=value ...\n"
+        "  pdfword form-create <in.pdf> <out.pdf> <name:text|checkbox|choice:page:x0,y0,x1,y1[:opt1|opt2]> ...\n"
+        "  pdfword find <in.pdf> <needle> [--page N]\n"
+        "  pdfword replace <in.pdf> <out.pdf> <find> <replace> [--delete-only] [--size N] [--color C] [--limit N] [--case]\n"
+        "  pdfword replace-image <in.pdf> <out.pdf> <page> <x0,y0,x1,y1> <image>\n"
+        "  pdfword outline <in.pdf> [--txt out.txt]      打印 / 导出书签目录\n"
+        "  pdfword set-outline <in.pdf> <out.pdf> <level:page:title> ... [--from out.txt]\n"
+        "      level 从 0 起（0 = 顶级），page 从 1 起（0 = 没有跳转）；不给项等于清空目录\n"
         "  加密 PDF 在上述命令后追加 --password <pwd>\n";
 }
 
@@ -505,10 +524,521 @@ int cmdDecryptOrCompress(const std::string& cmd, const std::vector<std::string>&
     return 0;
 }
 
-// 前置声明：main 里调用，实现放在 main 之后
-int dispatch(const std::string& cmd, std::vector<std::string>& args);
+// OCR：识别扫描件 → 写不可见文字层（可检索 PDF）+ 导出纯文本。
+// 两个输出路径都用 "-" 表示"这一类不要"。
+int cmdOcr(const std::vector<std::string>& args) {
+    std::string lang = "zh-Hans-CN";
+    std::vector<std::string> pos;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--lang" && i + 1 < args.size()) {
+            lang = args[++i];
+        } else {
+            pos.push_back(args[i]);
+        }
+    }
+    if (pos.size() < 3) return printUsage(), 1;
 
-int main(int argc, char** argv) {
+    const bool wantPdf = pos[1] != "-";
+    const bool wantTxt = pos[2] != "-";
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->ocr(
+        pos[0], wantPdf ? fs::path(pos[1]) : fs::path(), wantTxt ? fs::path(pos[2]) : fs::path(),
+        lang, wantPdf, wantTxt, gPassword);
+    if (!st.ok()) return reportStatus(st);
+    if (wantPdf) std::cout << "可检索 PDF -> " << pos[1] << "\n";
+    if (wantTxt) std::cout << "纯文本 -> " << pos[2] << "\n";
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// 编辑与批注类命令
+// ---------------------------------------------------------------------------
+
+// "x0,y0,x1,y1"（也认空格/分号分隔），单位 pt，页面左上原点、y 向下
+RectD parseRectStr(const std::string& s) {
+    RectD r;
+    std::vector<double> vals;
+    std::string cur;
+    std::string body = s + ",";
+    for (char c : body) {
+        if (c == ',' || c == ';' || c == ' ' || c == '\t') {
+            if (!cur.empty()) {
+                vals.push_back(std::stod(cur));
+                cur.clear();
+            }
+        } else {
+            cur.push_back(c);
+        }
+    }
+    if (vals.size() == 4) {
+        r.x0 = vals[0];
+        r.y0 = vals[1];
+        r.x1 = vals[2];
+        r.y1 = vals[3];
+    }
+    return r;
+}
+
+AnnotKind parseAnnotKind(const std::string& s, bool* ok) {
+    if (ok) *ok = true;
+    if (s == "highlight" || s == "高亮") return AnnotKind::Highlight;
+    if (s == "underline" || s == "下划线") return AnnotKind::Underline;
+    if (s == "strikeout" || s == "删除线") return AnnotKind::StrikeOut;
+    if (s == "squiggly" || s == "波浪线") return AnnotKind::Squiggly;
+    if (s == "note" || s == "便签") return AnnotKind::Note;
+    if (s == "freetext" || s == "text" || s == "文本框") return AnnotKind::FreeText;
+    if (s == "ink" || s == "手绘") return AnnotKind::Ink;
+    if (ok) *ok = false;
+    return AnnotKind::Highlight;
+}
+
+FieldKind parseFieldKind(const std::string& s) {
+    if (s == "text" || s == "文本") return FieldKind::Text;
+    if (s == "checkbox" || s == "勾选" || s == "check") return FieldKind::Checkbox;
+    if (s == "choice" || s == "下拉") return FieldKind::Choice;
+    if (s == "signature" || s == "签名") return FieldKind::Signature;
+    return FieldKind::Text;
+}
+
+const char* fieldKindName(FieldKind k) {
+    switch (k) {
+        case FieldKind::Text: return "文本";
+        case FieldKind::Checkbox: return "勾选";
+        case FieldKind::Choice: return "下拉";
+        case FieldKind::Signature: return "签名";
+        default: return "未知";
+    }
+}
+
+// annotate <in.pdf> <out.pdf> <kind> <page> <rect> [--text T] [--color #RRGGBB]
+//          [--author A] [--opacity 0..1] [--ink "x,y;x,y;..."]（可多条折线，用 | 分隔）
+int cmdAnnotate(const std::vector<std::string>& args) {
+    std::string text;
+    std::string color;
+    std::string author;
+    std::string inkSpec;
+    double opacity = 1.0;
+    std::vector<std::string> pos;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--text" && i + 1 < args.size()) {
+            text = args[++i];
+        } else if (args[i] == "--color" && i + 1 < args.size()) {
+            color = args[++i];
+        } else if (args[i] == "--author" && i + 1 < args.size()) {
+            author = args[++i];
+        } else if (args[i] == "--opacity" && i + 1 < args.size()) {
+            opacity = std::stod(args[++i]);
+        } else if (args[i] == "--ink" && i + 1 < args.size()) {
+            inkSpec = args[++i];
+        } else {
+            pos.push_back(args[i]);
+        }
+    }
+    if (pos.size() < 5) return printUsage(), 1;
+
+    bool kindOk = false;
+    AnnotSpec spec;
+    spec.kind = parseAnnotKind(pos[2], &kindOk);
+    if (!kindOk) {
+        std::cerr << "未知批注类型: " << pos[2]
+                  << "（可用 highlight/underline/strikeout/squiggly/note/freetext/ink）\n";
+        return 1;
+    }
+    spec.page = std::stoi(pos[3]) - 1;  // 命令行用 1-based
+    if (spec.page < 0) {
+        std::cerr << "页号从 1 开始\n";
+        return 1;
+    }
+    spec.rect = parseRectStr(pos[4]);
+    spec.text = text;
+    spec.colorHex = color;
+    spec.author = author;
+    spec.opacity = opacity;
+
+    if (!inkSpec.empty()) {
+        // "x1,y1;x2,y2;...|x1,y1;..." → 多条折线
+        std::vector<std::vector<PointD>> paths;
+        std::string chunk;
+        auto flush = [&]() {
+            if (chunk.empty()) return;
+            std::vector<PointD> path;
+            std::string point;
+            std::string body = chunk + ";";
+            double x = 0.0;
+            bool haveX = false;
+            for (char c : body) {
+                if (c == ';') {
+                    if (!point.empty()) {
+                        const double v = std::stod(point);
+                        if (!haveX) {
+                            x = v;
+                            haveX = true;
+                        } else {
+                            PointD p;
+                            p.x = x;
+                            p.y = v;
+                            path.push_back(p);
+                            haveX = false;
+                        }
+                        point.clear();
+                    }
+                } else if (c == ',' || c == ' ') {
+                    if (!point.empty()) {
+                        const double v = std::stod(point);
+                        if (!haveX) {
+                            x = v;
+                            haveX = true;
+                        } else {
+                            PointD p;
+                            p.x = x;
+                            p.y = v;
+                            path.push_back(p);
+                            haveX = false;
+                        }
+                        point.clear();
+                    }
+                } else {
+                    point.push_back(c);
+                }
+            }
+            if (!path.empty()) paths.push_back(path);
+            chunk.clear();
+        };
+        for (char c : inkSpec) {
+            if (c == '|') {
+                flush();
+            } else {
+                chunk.push_back(c);
+            }
+        }
+        flush();
+        spec.inkPaths = paths;
+    }
+
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->annotate(pos[0], pos[1], {spec}, gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << "已添加批注 -> " << pos[1] << "\n";
+    return 0;
+}
+
+// link <in.pdf> <out.pdf> <page> <rect> <uri>
+//   uri 可以是 https://… 或页内跳转 "#page=3" / "第3页"
+int cmdLink(const std::vector<std::string>& args) {
+    if (args.size() < 5) return printUsage(), 1;
+    LinkSpec link;
+    link.page = std::stoi(args[2]) - 1;
+    if (link.page < 0) {
+        std::cerr << "页号从 1 开始\n";
+        return 1;
+    }
+    link.rect = parseRectStr(args[3]);
+    link.uri = args[4];
+    if (link.rect.empty()) {
+        std::cerr << "链接区域为空，格式应为 x0,y0,x1,y1\n";
+        return 1;
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->addLink(args[0], args[1], link, gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << "已添加超链接 -> " << args[1] << "\n";
+    return 0;
+}
+
+// form-fields <in.pdf>       列出所有字段
+int cmdFormFields(const std::vector<std::string>& args) {
+    if (args.size() < 1) return printUsage(), 1;
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Result<std::vector<FormField>> res = converter.pdfBackend()->formFields(args[0], gPassword);
+    if (!res.ok()) return reportStatus(res.status());
+    const auto& fields = res.value();
+    if (fields.empty()) {
+        std::cout << "文档里没有可填写的表单字段\n";
+        return 0;
+    }
+    std::cout << "共 " << fields.size() << " 个字段\n";
+    for (const FormField& f : fields) {
+        std::cout << "  [" << f.page + 1 << "页] " << f.name << "  类型="
+                  << fieldKindName(f.kind);
+        if (f.readOnly) std::cout << " (只读)";
+        std::cout << "  值=\"" << f.value << "\"";
+        if (!f.options.empty()) {
+            std::cout << "  选项=";
+            for (std::size_t i = 0; i < f.options.size(); ++i) {
+                std::cout << (i > 0 ? "|" : "") << f.options[i];
+            }
+        }
+        std::cout << "\n";
+    }
+    return 0;
+}
+
+// form-fill <in.pdf> <out.pdf> name=value [name=value ...]
+int cmdFormFill(const std::vector<std::string>& args) {
+    if (args.size() < 3) return printUsage(), 1;
+    std::vector<FieldValue> values;
+    for (std::size_t i = 2; i < args.size(); ++i) {
+        const std::size_t eq = args[i].find('=');
+        if (eq == std::string::npos) {
+            std::cerr << "字段赋值要写成 name=value: " << args[i] << "\n";
+            return 1;
+        }
+        FieldValue v;
+        v.name = args[i].substr(0, eq);
+        v.value = args[i].substr(eq + 1);
+        values.push_back(v);
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->fillForm(args[0], args[1], values, gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << "已填写 " << values.size() << " 个字段 -> " << args[1] << "\n";
+    return 0;
+}
+
+// form-create <in.pdf> <out.pdf> <name:type:page:rect[:opt1|opt2]> ...
+//   type = text | checkbox | choice
+int cmdFormCreate(const std::vector<std::string>& args) {
+    if (args.size() < 3) return printUsage(), 1;
+    std::vector<FieldSpec> fields;
+    for (std::size_t i = 2; i < args.size(); ++i) {
+        std::vector<std::string> parts;
+        std::string cur;
+        for (char c : args[i]) {
+            if (c == ':') {
+                parts.push_back(cur);
+                cur.clear();
+            } else {
+                cur.push_back(c);
+            }
+        }
+        parts.push_back(cur);
+        if (parts.size() < 4) {
+            std::cerr << "字段定义至少要 name:type:page:rect，收到: " << args[i] << "\n";
+            return 1;
+        }
+        FieldSpec spec;
+        spec.name = parts[0];
+        spec.kind = parseFieldKind(parts[1]);
+        spec.page = std::stoi(parts[2]) - 1;
+        if (spec.page < 0) {
+            std::cerr << "页号从 1 开始\n";
+            return 1;
+        }
+        spec.rect = parseRectStr(parts[3]);
+        if (spec.rect.empty()) {
+            std::cerr << "字段区域为空，格式应为 x0,y0,x1,y1: " << args[i] << "\n";
+            return 1;
+        }
+        if (parts.size() >= 5 && !parts[4].empty()) {
+            std::string opt;
+            for (char c : parts[4]) {
+                if (c == '|') {
+                    if (!opt.empty()) spec.options.push_back(opt);
+                    opt.clear();
+                } else {
+                    opt.push_back(c);
+                }
+            }
+            if (!opt.empty()) spec.options.push_back(opt);
+        }
+        fields.push_back(spec);
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->createForm(args[0], args[1], fields, gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << "已创建 " << fields.size() << " 个表单字段 -> " << args[1] << "\n";
+    return 0;
+}
+
+// find <in.pdf> <needle> [--page N]
+int cmdFind(const std::vector<std::string>& args) {
+    if (args.size() < 2) return printUsage(), 1;
+    int page = -1;
+    std::vector<std::string> pos;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--page" && i + 1 < args.size()) {
+            page = std::stoi(args[++i]) - 1;
+        } else {
+            pos.push_back(args[i]);
+        }
+    }
+    if (pos.size() < 2) return printUsage(), 1;
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Result<std::vector<TextHit>> res =
+        converter.pdfBackend()->findText(pos[0], pos[1], page, gPassword);
+    if (!res.ok()) return reportStatus(res.status());
+    const auto& hits = res.value();
+    std::cout << "命中 " << hits.size() << " 处\n";
+    for (const TextHit& h : hits) {
+        std::cout << "  第 " << h.page + 1 << " 页  [" << h.rect.x0 << "," << h.rect.y0 << " - "
+                  << h.rect.x1 << "," << h.rect.y1 << "]  \"" << h.text << "\"\n";
+    }
+    return 0;
+}
+
+// replace <in.pdf> <out.pdf> <find> <replace> [--delete-only] [--size N] [--color #RRGGBB] [--limit N]
+int cmdReplace(const std::vector<std::string>& args) {
+    ReplaceOptions opts;
+    std::vector<std::string> pos;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--delete-only") {
+            opts.deleteOnly = true;
+        } else if (args[i] == "--size" && i + 1 < args.size()) {
+            opts.fontSize = std::stod(args[++i]);
+        } else if (args[i] == "--color" && i + 1 < args.size()) {
+            opts.colorHex = args[++i];
+        } else if (args[i] == "--limit" && i + 1 < args.size()) {
+            opts.limit = std::stoi(args[++i]);
+        } else if (args[i] == "--case") {
+            opts.caseSensitive = true;
+        } else {
+            pos.push_back(args[i]);
+        }
+    }
+    if (pos.size() < 3) return printUsage(), 1;
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->replaceText(pos[0], pos[1], pos[2],
+                                                    opts.deleteOnly ? std::string() : pos[3], opts,
+                                                    gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << (opts.deleteOnly ? "已删除命中文字" : "已替换命中文字") << " -> " << pos[1] << "\n";
+    return 0;
+}
+
+// replace-image <in.pdf> <out.pdf> <page> <rect> <image>
+int cmdReplaceImage(const std::vector<std::string>& args) {
+    if (args.size() < 5) return printUsage(), 1;
+    const int page = std::stoi(args[2]) - 1;
+    if (page < 0) {
+        std::cerr << "页号从 1 开始\n";
+        return 1;
+    }
+    const RectD rect = parseRectStr(args[3]);
+    if (rect.empty()) {
+        std::cerr << "替换区域为空，格式应为 x0,y0,x1,y1\n";
+        return 1;
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->replaceImage(args[0], args[1], page, rect, args[4], gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << "已替换图片 -> " << args[1] << "\n";
+    return 0;
+}
+
+// outline <in.pdf> [--txt out.txt]
+//   打印目录树（缩进表示层级）；给了 --txt 就连同层级、页码一起导出成文本
+int cmdOutline(const std::vector<std::string>& args) {
+    if (args.empty()) return printUsage(), 1;
+    std::string txtOut;
+    std::string in;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--txt" && i + 1 < args.size()) {
+            txtOut = args[++i];
+        } else if (in.empty()) {
+            in = args[i];
+        }
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Result<std::vector<OutlineItem>> res = converter.pdfBackend()->outline(in, gPassword);
+    if (!res.ok()) return reportStatus(res.status());
+    const auto& items = res.value();
+    if (items.empty()) {
+        std::cout << "文档没有书签 / 目录\n";
+        return 0;
+    }
+    std::cout << "共 " << items.size() << " 条书签 / 目录\n";
+    std::string text;
+    for (const OutlineItem& item : items) {
+        const std::string indent(static_cast<std::size_t>(item.level) * 2, ' ');
+        std::cout << indent << "- " << item.title;
+        if (item.page > 0) std::cout << "  (第 " << item.page << " 页)";
+        std::cout << "\n";
+        // 导出格式：层级<TAB>页码<TAB>标题（page 0 表示没有跳转目标）
+        text += std::to_string(item.level) + "\t" + std::to_string(item.page) + "\t" + item.title +
+                "\n";
+    }
+    if (!txtOut.empty()) {
+        std::ofstream out(txtOut.c_str(), std::ios::binary);
+        if (!out) {
+            std::cerr << "写不了: " << txtOut << "\n";
+            return 1;
+        }
+        out << text;
+        out.close();
+        std::cout << "已导出书签 -> " << txtOut << "\n";
+    }
+    return 0;
+}
+
+// set-outline <in.pdf> <out.pdf> "level:page:title" ...
+//   level 从 0 开始（0 = 顶级），page 从 1 开始（0 = 没有跳转目标）；不给任何项等于清空目录
+//   --from <txt> 可以代替后面的一串参数，直接吃 outline --txt 导出的文件
+int cmdSetOutline(const std::vector<std::string>& args) {
+    if (args.size() < 2) return printUsage(), 1;
+    std::vector<OutlineItem> items;
+    std::string fromFile;
+    std::vector<std::string> specs;
+    for (std::size_t i = 2; i < args.size(); ++i) {
+        if (args[i] == "--from" && i + 1 < args.size()) {
+            fromFile = args[++i];
+        } else {
+            specs.push_back(args[i]);
+        }
+    }
+    if (!fromFile.empty()) {
+        std::ifstream in(fromFile.c_str(), std::ios::binary);
+        if (!in) {
+            std::cerr << "读不了: " << fromFile << "\n";
+            return 1;
+        }
+        std::string line;
+        while (std::getline(in, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            if (line.empty()) continue;
+            const std::size_t t1 = line.find('\t');
+            const std::size_t t2 = t1 == std::string::npos ? std::string::npos : line.find('\t', t1 + 1);
+            if (t1 == std::string::npos || t2 == std::string::npos) continue;
+            OutlineItem item;
+            item.level = std::stoi(line.substr(0, t1));
+            item.page = std::stoi(line.substr(t1 + 1, t2 - t1 - 1));
+            item.title = line.substr(t2 + 1);
+            items.push_back(item);
+        }
+        in.close();
+    }
+    for (const std::string& spec : specs) {
+        const std::size_t c1 = spec.find(':');
+        const std::size_t c2 = c1 == std::string::npos ? std::string::npos : spec.find(':', c1 + 1);
+        if (c1 == std::string::npos || c2 == std::string::npos) {
+            std::cerr << "书签定义要写成 level:page:title，收到: " << spec << "\n";
+            return 1;
+        }
+        OutlineItem item;
+        item.level = std::stoi(spec.substr(0, c1));
+        item.page = std::stoi(spec.substr(c1 + 1, c2 - c1 - 1));
+        item.title = spec.substr(c2 + 1);
+        items.push_back(item);
+    }
+    Config cfg = loadConfig(gSelf);
+    Converter converter(cfg);
+    Status st = converter.pdfBackend()->setOutline(args[0], args[1], items, gPassword);
+    if (!st.ok()) return reportStatus(st);
+    std::cout << "已写入 " << items.size() << " 条书签 -> " << args[1] << "\n";
+    return 0;
+}
+
+// 前置声明：main 里调用，实现放在 main 之后
+int dispatch(const std::string& cmd, std::vector<std::string>& args);int main(int argc, char** argv) {
     gSelf = fs::absolute(fs::path(argv[0]));
 
     if (argc < 2) {
@@ -549,6 +1079,18 @@ int dispatch(const std::string& cmd, std::vector<std::string>& args) {
         return 0;
     }
     if (cmd == "convert") return cmdConvert(args);
+
+    // 编辑与批注类
+    if (cmd == "annotate") return cmdAnnotate(args);
+    if (cmd == "link") return cmdLink(args);
+    if (cmd == "form-fields") return cmdFormFields(args);
+    if (cmd == "form-fill") return cmdFormFill(args);
+    if (cmd == "form-create") return cmdFormCreate(args);
+    if (cmd == "find") return cmdFind(args);
+    if (cmd == "replace") return cmdReplace(args);
+    if (cmd == "replace-image") return cmdReplaceImage(args);
+    if (cmd == "outline") return cmdOutline(args);
+    if (cmd == "set-outline") return cmdSetOutline(args);
     if (cmd == "info" && !args.empty()) return cmdInfo(args[0]);
     if (cmd == "text" && args.size() >= 2) return cmdText(args[0], std::stoi(args[1]));
     if (cmd == "render") return cmdRender(args);
@@ -626,17 +1168,59 @@ int dispatch(const std::string& cmd, std::vector<std::string>& args) {
     if (cmd == "compress") return cmdDecryptOrCompress("compress", args);
 
     if (cmd == "watermark" && args.size() >= 3) {
-        float opacity = args.size() >= 4 ? std::stof(args[3]) : 0.3f;
+        float opacity = 0.3f;
+        std::string position = "top-left";
+        for (std::size_t i = 3; i < args.size(); ++i) {
+            if (args[i] == "--opacity" && i + 1 < args.size()) {
+                opacity = std::stof(args[++i]);
+            } else if (args[i] == "--position" && i + 1 < args.size()) {
+                position = args[++i];
+            } else if (args[i].rfind("--", 0) != 0) {
+                opacity = std::stof(args[i]);   // 兼容旧写法：watermark in out text 0.3
+            }
+        }
         Config cfg = loadConfig(gSelf);
         Converter converter(cfg);
-        Status st = converter.pdfBackend()->watermark(args[0], args[1], args[2], opacity);
+        Status st = converter.pdfBackend()->watermark(args[0], args[1], args[2], opacity, position);
         if (!st.ok()) {
             std::cerr << st.toString() << "\n";
             return static_cast<int>(st.code());
         }
-        std::cout << "已加水印 -> " << args[1] << "\n";
+        std::cout << "已加水印（" << position << "）-> " << args[1] << "\n";
         return 0;
     }
+
+    // 图片水印：pdfword imgwatermark <in.pdf> <out.pdf> <image.png> [--scale 0.3] [--opacity 0.3] [--tile]
+    // （--password 由 main 统一摘到 gPassword）
+    if (cmd == "imgwatermark" && args.size() >= 3) {
+        float scale = 0.3f;
+        float opacity = 0.3f;
+        bool tile = false;
+        for (std::size_t i = 3; i < args.size(); ++i) {
+            if (args[i] == "--opacity" && i + 1 < args.size()) {
+                opacity = std::stof(args[++i]);
+            } else if (args[i] == "--scale" && i + 1 < args.size()) {
+                scale = std::stof(args[++i]);
+            } else if (args[i] == "--tile") {
+                tile = true;
+            } else {
+                scale = std::stof(args[i]);   // 兼容位置参数写法：imgwatermark in out img 0.4
+            }
+        }
+        Config cfg = loadConfig(gSelf);
+        Converter converter(cfg);
+        Status st = converter.pdfBackend()->imageWatermark(fs::path(args[0]), fs::path(args[1]),
+                                                           fs::path(args[2]), opacity, scale, tile,
+                                                           gPassword);
+        if (!st.ok()) {
+            std::cerr << st.toString() << "\n";
+            return static_cast<int>(st.code());
+        }
+        std::cout << "已加图片水印" << (tile ? "（平铺）" : "") << " -> " << args[1] << "\n";
+        return 0;
+    }
+
+    if (cmd == "ocr" && args.size() >= 3) return cmdOcr(args);
 
     printUsage();
     return 1;

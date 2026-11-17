@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
-project(PdfWord VERSION 0.1.0 LANGUAGES CXX)
+# 产品名 Pdf-Toolkit；target 名仍是 pdfword_ui / pdfword_cli / pdfword_core（不改，避免动脚本与 web 壳）
+project(Pdf-Toolkit VERSION 0.1.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # 顶层开关。core 永远不依赖 Qt，所以即使不装 Qt 也能单独构建 CLI / C 库。

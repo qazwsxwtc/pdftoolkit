@@ -1,4 +1,4 @@
-; PdfWord 配置示例
+; Pdf-Toolkit 配置示例（文件名沿用 pdfword.ini）
 ; 用法：复制为 pdfword.ini，放到 pdfword_ui.exe / pdfword_cli.exe 同目录。
 ; 查找优先级：显式传入 > 环境变量 > exe 同目录 ini > 注册表 > 常见安装目录 > PATH
 
@@ -9,7 +9,8 @@ libre_office = D:/Portable/LibreOffice/program/soffice.exe
 ; 便携/解压版 MuPDF 动态库目录（仅当以动态链接方式集成 MuPDF 时需要）
 mupdf_dir =
 
-; 工作目录（隔离 profile、临时输出都放这里）；留空 = %LOCALAPPDATA%/PdfWord/work
+; 工作目录（隔离 profile、临时输出都放这里）；留空 = %LOCALAPPDATA%/Pdf-Toolkit/work
+; 注意：旧版本用的是 %LOCALAPPDATA%/PdfWord/work，改名后不会自动搬过去（旧目录留着不删）
 work_dir =
 
 ; 单次 LibreOffice 转换超时（毫秒），5 秒 ~ 1 小时

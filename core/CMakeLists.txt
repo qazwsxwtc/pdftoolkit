@@ -38,6 +38,45 @@ endif()
 if(WIN32)
     # 注册表探测 LibreOffice 需要 advapi32
     target_link_libraries(pdfword_core PRIVATE advapi32)
+
+    # OCR：Windows 10/11 自带的 Windows.Media.Ocr（离线、无模型文件、带词级矩形）。
+    # 头文件在 Windows SDK 的 cppwinrt 目录里，默认不在 include 路径上，得单独加；
+    # 运行期还需要 WindowsApp.lib 提供 WinRT 激活桩。
+    target_sources(pdfword_core PRIVATE src/ocr_windows.cpp)
+    # Windows SDK 未必装在系统盘默认位置（本机就在 D:\Windows Kits），所以按候选根目录挨个试，
+    # 取最新一个带 cppwinrt\winrt\base.h 的版本目录。
+    # 注：CMake 不能写 $ENV{ProgramFiles(x86)}（括号在变量名里非法），这里用 SystemDrive 拼。
+    set(_pw_sdk_roots
+        "$ENV{WindowsSdkDir}/Include"
+        "$ENV{SystemDrive}/Program Files (x86)/Windows Kits/10/Include"
+        "$ENV{SystemDrive}/Program Files/Windows Kits/10/Include"
+        "D:/Windows Kits/10/Include"
+    )
+    set(_pw_cppwinrt "")
+    foreach(_root IN LISTS _pw_sdk_roots)
+        if(_root AND EXISTS "${_root}")
+            file(GLOB _pw_ver_dirs "${_root}/10.*")
+            list(SORT _pw_ver_dirs)
+            list(REVERSE _pw_ver_dirs)
+            foreach(_ver IN LISTS _pw_ver_dirs)
+                if(EXISTS "${_ver}/cppwinrt/winrt/base.h")
+                    set(_pw_cppwinrt "${_ver}/cppwinrt")
+                    break()
+                endif()
+            endforeach()
+        endif()
+        if(_pw_cppwinrt)
+            break()
+        endif()
+    endforeach()
+    if(EXISTS "${_pw_cppwinrt}/winrt/base.h")
+        target_include_directories(pdfword_core PRIVATE "${_pw_cppwinrt}")
+        target_compile_definitions(pdfword_core PRIVATE PDFWORD_HAVE_WINRT_OCR=1)
+        target_link_libraries(pdfword_core PRIVATE WindowsApp)
+        message(STATUS "OCR: 使用 Windows 内置 OCR（cppwinrt=${_pw_cppwinrt}）")
+    else()
+        message(WARNING "OCR: 没找到 Windows SDK 的 cppwinrt 目录，跳过 Windows OCR")
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

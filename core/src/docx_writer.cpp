@@ -151,13 +151,13 @@ Status DocxWriter::save(const fs::path& path) {
         "<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" "
         "xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
         "<dc:title>" + xmlEscape(impl_->title) + "</dc:title>"
-        "<dc:creator>PdfWord</dc:creator>"
+        "<dc:creator>Pdf-Toolkit</dc:creator>"
         "</cp:coreProperties>";
 
     std::string app =
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
         "<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\">"
-        "<Application>PdfWord</Application>"
+        "<Application>Pdf-Toolkit</Application>"
         "</Properties>";
 
     detail::ZipWriter zip;

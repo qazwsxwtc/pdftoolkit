@@ -25,6 +25,7 @@ ExtractDialog::ExtractDialog(std::shared_ptr<pw::IPdfBackend> backend, const QSt
     auto* srcRow = new QHBoxLayout();
     srcRow->addWidget(new QLabel(QStringLiteral("源 PDF"), this));
     source_ = new QComboBox(this);
+    source_->setObjectName(QStringLiteral("sourceCombo"));
     source_->setMinimumWidth(320);
     for (const auto& path : candidates) {
         if (path.isEmpty()) continue;
@@ -42,6 +43,7 @@ ExtractDialog::ExtractDialog(std::shared_ptr<pw::IPdfBackend> backend, const QSt
     auto* specRow = new QHBoxLayout();
     specRow->addWidget(new QLabel(QStringLiteral("页码范围"), this));
     spec_ = new QLineEdit(this);
+    spec_->setObjectName(QStringLiteral("specEdit"));
     spec_->setPlaceholderText(QStringLiteral("如 1-3,5 或 1,3,5-8；中文逗号也认"));
     auto* allBtn = new QPushButton(QStringLiteral("全部页"), this);
     specRow->addWidget(spec_, 1);
@@ -49,6 +51,7 @@ ExtractDialog::ExtractDialog(std::shared_ptr<pw::IPdfBackend> backend, const QSt
     root->addLayout(specRow);
 
     hint_ = new QLabel(QStringLiteral("正在读取页数…"), this);
+    hint_->setObjectName(QStringLiteral("hintLabel"));
     hint_->setWordWrap(true);
     root->addWidget(hint_);
 
@@ -101,10 +104,10 @@ void ExtractDialog::reloadPageCount() {
     }
     auto opened = backend_->open(std::filesystem::path(path.toStdString()), std::string());
     if (!opened.ok()) {
+        pages_.clear();
         hint_->setText(QStringLiteral("打不开该文件: ") + QString::fromStdString(opened.message()));
         specValid_ = false;
-        revalidate();
-        return;
+        return;   // 不要 revalidate，否则会把"打不开"的原因覆盖掉
     }
     pageCount_ = opened.value()->info().pageCount;
     revalidate();
@@ -116,6 +119,13 @@ void ExtractDialog::revalidate() {
         pages_.clear();
         hint_->setText(pageCount_ > 0 ? QStringLiteral("共 %1 页，填页码范围后抽取").arg(pageCount_)
                                       : QStringLiteral("填页码范围"));
+        specValid_ = false;
+        return;
+    }
+    if (pageCount_ <= 0) {
+        // 页数读不到（路径不可用或加密未解密）时，宁可判无效，也不放行荒唐范围
+        pages_.clear();
+        hint_->setText(QStringLiteral("页码范围无效：读不到页数（文件打不开或已加密，先解密再抽取）"));
         specValid_ = false;
         return;
     }

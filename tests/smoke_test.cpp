@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
 
     std::cout << "DOCX 生成\n";
     DocxWriter writer;
-    writer.setTitle("PdfWord 冒烟测试");
+    writer.setTitle("Pdf-Toolkit 冒烟测试");
     writer.addParagraph("第一章 测试", 1);
     writer.addParagraph("正文包含 & <特殊> \"字符\" 与 '引号'");
     writer.addPageBreak();

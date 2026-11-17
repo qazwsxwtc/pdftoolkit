@@ -12,6 +12,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include "DropListWidget.h"
+
 namespace {
 const char* kPathKey = "pdfPath";
 }
@@ -21,9 +23,13 @@ MergeDialog::MergeDialog(const QStringList& candidates, QWidget* parent) : QDial
     resize(560, 460);
 
     auto* root = new QVBoxLayout(this);
-    root->addWidget(new QLabel(QStringLiteral("待合并的文件（按列表顺序拼接，越靠上越前）："), this));
+    root->addWidget(new QLabel(QStringLiteral("待合并的文件（按列表顺序拼接，越靠上越前；可拖入 PDF）："), this));
 
-    list_ = new QListWidget(this);
+    // 支持把 PDF 从资源管理器直接拖进列表
+    auto* dropList = new DropListWidget(this);
+    dropList->setExtensions({QStringLiteral("pdf")});
+    list_ = dropList;
+    list_->setObjectName(QStringLiteral("mergeList"));
     list_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     root->addWidget(list_, 1);
 
@@ -42,6 +48,7 @@ MergeDialog::MergeDialog(const QStringList& candidates, QWidget* parent) : QDial
     auto* outRow = new QHBoxLayout();
     outRow->addWidget(new QLabel(QStringLiteral("输出文件"), this));
     output_ = new QLineEdit(this);
+    output_->setObjectName(QStringLiteral("mergeOutput"));
     auto* browseBtn = new QPushButton(QStringLiteral("浏览…"), this);
     outRow->addWidget(output_, 1);
     outRow->addWidget(browseBtn);
@@ -55,6 +62,11 @@ MergeDialog::MergeDialog(const QStringList& candidates, QWidget* parent) : QDial
     if (list_->count() > 0) output_->setText(suggestOutput());
 
     connect(addBtn, &QPushButton::clicked, this, &MergeDialog::addFiles);
+    connect(dropList, &DropListWidget::filesDropped, this, [this](const QStringList& paths) {
+        for (const auto& p : paths) appendFile(p);
+        // 拖进来的第一个文件决定默认输出名
+        if (output_->text().trimmed().isEmpty() && list_->count() > 0) output_->setText(suggestOutput());
+    });
     connect(removeBtn, &QPushButton::clicked, this, &MergeDialog::removeSelected);
     connect(upBtn, &QPushButton::clicked, this, &MergeDialog::moveUp);
     connect(downBtn, &QPushButton::clicked, this, &MergeDialog::moveDown);

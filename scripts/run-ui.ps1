@@ -1,8 +1,8 @@
-# 启动 PdfWord 界面。
+# 启动 Pdf-Toolkit 界面（可执行文件仍名 pdfword_ui.exe）。
 #
 # 工程有两个构建目录，产物同名，很容易双击错的：
-#   build\mupdf     PDFWORD_WITH_MUPDF=ON，PDF 后端 = mupdf（可用），exe ~35 MB
-#   build\msvc-x64  最小骨架，PDF 后端 = stub（不可用），exe ~0.3 MB
+#   build\mupdf     PDFWORD_WITH_MUPDF=ON，PDF 后端 = mupdf（可用），exe ~36 MB
+#   build\msvc-x64  最小骨架，PDF 后端 = stub（不可用），exe ~0.4 MB
 #
 # 用法：
 #   pwsh -File scripts\run-ui.ps1              # 默认跑带 MuPDF 的界面

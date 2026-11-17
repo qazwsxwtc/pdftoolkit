@@ -30,6 +30,7 @@ ConvertDialog::ConvertDialog(const QStringList& files, QWidget* parent) : QDialo
     auto* fmtRow = new QHBoxLayout();
     fmtRow->addWidget(new QLabel(QStringLiteral("目标格式"), this));
     target_ = new QComboBox(this);
+    target_->setObjectName(QStringLiteral("formatCombo"));
     target_->addItem(QStringLiteral("pdf — Word/文档 转 PDF（LibreOffice，保版式）"), QStringLiteral("pdf"));
     target_->addItem(QStringLiteral("docx — PDF 转 Word（提取文字重排，版式有损）"), QStringLiteral("docx"));
     fmtRow->addWidget(target_, 1);
@@ -47,12 +48,14 @@ ConvertDialog::ConvertDialog(const QStringList& files, QWidget* parent) : QDialo
     auto* pwdRow = new QHBoxLayout();
     pwdRow->addWidget(new QLabel(QStringLiteral("PDF 密码"), this));
     password_ = new QLineEdit(this);
+    password_->setObjectName(QStringLiteral("passwordEdit"));
     password_->setEchoMode(QLineEdit::Password);
     password_->setPlaceholderText(QStringLiteral("加密 PDF 才需要填"));
     pwdRow->addWidget(password_, 1);
     root->addLayout(pwdRow);
 
     summary_ = new QLabel(this);
+    summary_->setObjectName(QStringLiteral("summaryLabel"));
     summary_->setWordWrap(true);
     root->addWidget(summary_);
 
@@ -81,8 +84,8 @@ void ConvertDialog::refreshSummary() {
     }
     const bool toPdf = target() == QStringLiteral("pdf");
     QString text = QStringLiteral("其中 PDF %1 个、其他文档 %2 个。").arg(pdf).arg(other);
-    if (toPdf && pdf > 0) text += QStringLiteral(" PDF 本身就是 PDF，转 pdf 会被跳过或原样另存。");
-    if (!toPdf && other > 0) text += QStringLiteral(" 只有 PDF 能转 docx，非 PDF 文件会失败。");
+    if (toPdf && pdf > 0) text += QStringLiteral(" 转 pdf 时这 %1 个 PDF 会被跳过（它们已经是 PDF）。").arg(pdf);
+    if (!toPdf && other > 0) text += QStringLiteral(" 只有 PDF 能转 docx，这 %1 个非 PDF 文件会被跳过。").arg(other);
     summary_->setText(text);
 }
 

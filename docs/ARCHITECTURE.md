@@ -1,4 +1,4 @@
-# 架构说明
+# 架构说明（产品名 Pdf-Toolkit，工程标识沿用 pdfword）
 
 ## 分层与依赖方向
 
@@ -87,6 +87,35 @@ struct PageRef {
 图片转 PDF 走的也是同一个思路：`pdf_add_image` 把图片作为 XObject 直接嵌入，内容流只写
 `q <w> 0 0 <h> <x> <y> cm /Im0 Do Q`，不经过重采样，像素无损。
 
+图片水印（`writeImageWatermarked`）复用这条经验，但多一层页面嵌套：先把水印图片在**输出文档**里
+建一份 image XObject（`pdf_add_image`），每页只造一个 Form XObject，内容是若干条
+`q /GS0 gs <w> 0 0 <h> <x> <y> cm /PwImg Do Q`，Form 自带 `/Resources`（`/XObject` 指那份图片、
+`/ExtGState` 给整体透明度 `/ca`），再按 `q ... Q` 包住原内容追加到 `/Contents`。
+这样平铺 30 格也只是 30 条 `Do`，整份文档只有 1 个 `/Image` + 1 个 `/SMask`
+（9 页样例 194,670 B）。第一版拿 `pdf_new_pdf_device` + `fz_fill_image` 逐格画，
+pdf device 不去重，同一页每格都嵌一份像素，输出直接到 5.48 MB（648 个 Image 对象），已改掉。
+坐标按「显示方向」算（`dispbox`），再用 `fz_invert_matrix(pageCtm)` 折回页面用户空间写 `cm`，
+所以带 `/Rotate` 的页面也能正着铺。
+
+文字水印（`writeWatermarked`）在同一套骨架上多了"位置"这一维：`computeTextSpots()` 在显示空间里
+算出每条水印的基线起点和旋转角（九宫格 9 档、居中斜放、水平铺满、45° 铺满，共 12 种，
+未知取值退回 `top-left`），再把 spot 逐条塞进 fz_text 画到 device 里。
+
+**45° 两档必须走位图**：MuPDF 渲染"文字矩阵里带旋转"的内容流时会把字号放大 2–3 倍
+（单条 45° 水印像素红覆盖 27%、平铺 85%，而水平居中只有 0.7%）。原因是 pdf device 把旋转写进
+`cm`、把 `1 0 0 -1` 写进 `Tm`，渲染端对这两个矩阵组合后的字号估计出错——PDF 结构本身是对的
+（LibreOffice 渲染同一文件尺寸正常），所以只能绕开：`renderTextStamp()` 用 4 倍超采样把整条
+文字渲染成透明底 pixmap（alpha=0、颜色铺白，避免边缘发黑），`pdf_add_image` 建成 image XObject
+（整份文档一份，同字号页共用），每页只写若干条
+`q /GS0 gs <a> <b> <c> <d> <e> <f> cm /PwTxt Do Q`，旋转由 `cm` 承担。实测覆盖降到
+`center-diagonal` 0.6% / `tile-diagonal` 2.9%，与水平摆放同量级。
+
+字号与步长：单条 `max(18, 短边*8%)`，平铺 `max(16, 短边*5.5%)`；
+水平铺满 stepX = `1.5*tw + 0.5*size`、stepY = `3.0*size`；45° 铺满 stepU 同 stepX、
+stepV = `(tw+size)*0.7071*1.45`，文字中点落在页内 ±2pt 才画，每页硬上限 400 条。
+文字宽度用 `fz_bound_text` 探一条再取包围盒，**不要用 `fz_measure_string`**——它对 CJK 字体
+拿不到可靠 advance，中文平铺的步长会算错。
+
 加密 / 解密 / 压缩不需要装配，统一走 `resaveWithOptions()`：打开 → 改 `pdf_write_options`
 （`do_encrypt` / `permissions` / `upwd_utf8` / `opwd_utf8`，压缩额外 `pdf_subset_fonts` +
 `do_garbage=3`）→ 另存。
@@ -129,10 +158,116 @@ enum class ErrorCode : int { Ok, InvalidArgument, IoError, Unsupported,
 
 三条路都只需要 `capi/pdfword_c.h`，不需要知道 core 里长什么样。
 
+## OCR 的两层抽象（引擎 + backend 方法）
+
+```
+IOcrEngine（ocr.hpp）      <- 只认 RGBA 位图，吐 OcrPageResult（pt 坐标 / y 向下 / UTF-8）
+  ├─ WindowsOcrEngine      <- C++/WinRT → Windows.Media.Ocr，离线、语言取系统已装
+  └─ (TesseractOcrEngine)  <- 规划中：vcpkg 装好后实现同一接口即可替换
+IPdfBackend::ocr()        <- 渲染 → 识别 → 写回文字层 / 导出 txt，与引擎无关
+```
+
+- **为什么引擎只吃位图**：OCR 引擎的输入本质是像素。backend 负责渲染（知道 zoom、页面 pt、
+  `/Rotate`、`/CropBox`），引擎只负责把像素里的字和框找出来。换引擎、换平台都不用碰 PDF 代码。
+- **为什么识别结果是"显示空间 pt 坐标"**：引擎里 `sx = pageWidthPt / imageWidth`，
+  `pt = px / zoom`，这样写文字层时不用再关心 DPI。页面 `/Rotate` 由 Form XObject 的 `/Matrix`
+  统一吸收，词框不需要各自旋转。
+- **为什么文字层走 Form XObject 而不是直接改页面内容流**：页面原有内容常常留着未闭合的 `q`
+  （PPT 导出的 PDF 尤其常见），直接往后接会继承残留 CTM。一个 `q` 包原内容、`Q q /PwOcrLayer Do Q`
+  画图层，既隔离状态又只给页面加一个 `/XObject` 引用。
+- **为什么用 `3 Tr`（不可见）而不是白色字**：白字会盖掉扫描件里的浅色笔迹，且译打印仍可能显形；
+  `3 Tr` 是 PDF 规范里的"只参与文本抽取与搜索、不绘制"，渲染像素与源文件完全一致（实测 0 差异）。
+- **为什么码值用 glyph index（Identity-H）**：`pdf_add_cid_font` 会生成 `/Subtype/Type0` +
+  `/Encoding/Identity_H` 并顺带写 ToUnicode（从字体 cmap 逐 glyph 反查），所以内容流里直接写
+  gid 就能让复制/搜索还原成原文，不用自己维护 CMap。代价是显示字体必须真的含这些字形，
+  所以优先嵌微软雅黑（`C:/Windows/Fonts/msyh.ttc`），失败才退 MuPDF 内置 CJK 字体。
+- **字号与横向缩放怎么定**：词框高当字号、词框宽对自然宽（`Σ fz_advance_glyph`）算 `Tz`（clamp 20–500），
+  基线取 `y1 - 0.25 * size`。这样选中高亮基本落在字上，而不是浮在字上方/下方。
+- **Tesseract 回退的落点**：`makeOcrEngine()` 里"Windows 可用就用 Windows，否则找 Tesseract，
+  都没有才返回空"。上层看到的是同一个 `Status`，UI 的引擎能力标签会直接显示当前命中的引擎。
+
+## 编辑与批注的三条约定
+
+```
+edit.hpp（纯数据类型）       <- AnnotSpec / LinkSpec / FormField / FieldSpec / TextHit / ReplaceOptions
+IPdfBackend 的 10 个方法      <- annotate / addLink / formFields / fillForm / createForm /
+                                  findText / replaceText / replaceImage /
+                                  outline / setOutline
+PageTransform + 逆变换        <- ctm / inv / mediabox / dispbox，全部换算的入口
+```
+
+- **坐标只有一套**：对外（UI、CLI、C ABI、edit.hpp）一律是"页面显示空间 pt"——原点在页面左上角、
+  y 向下，跟预览拖框、OCR 词框完全一致。backend 内部用 `rectToUser()`（`inv` 矩阵）换成 PDF 用户空间，
+  所以 `/Rotate`、`/CropBox` 都不用上层操心。曾经踩过 `fz_new_stext_page_from_page` 后再乘一次 ctm
+  的坑（坐标被翻两次，命中的 y 跑到页面外），现在直接 `fz_rect_from_quad(ch->quad)` 就用。
+- **批注分两类**：高亮/下划线/删除线/波浪线**没有 `/Rect`**（只有 `/QuadPoints`），
+  `pdf_set_annot_rect` 会直接抛 "Highlight annotations have no Rect property"，必须按类型分支。
+  文本框（FreeText）的外观不走字体，而是把文字渲染成一张白底位图当 `/AP`——
+  挂 CJK 字体会让 MuPDF 把 19MB 的 OpenType 字体程序写进 PDF（实测 224KB → 19MB）。
+- **替换是覆盖式的**：MuPDF 的 `pdf_redact_page` / `pdf_apply_redaction` 在这类文档上删不掉文字
+  （Redact 注释确实被识别并被删除，但原文仍能被 search 到，判断文字藏在嵌套 Form 里没被实例化）。
+  于是 `replaceText` / `replaceImage` 统一改成"白底矩形覆盖 + 可选重写"：
+  先 `1 1 1 rg … re f` 盖掉原区域（左右各 1pt、只向下 2pt），再压新文字或新图。
+- **重写文字用两套字体**：拉丁字母走 base14 `/Helv`（`fz_new_base14_font` +
+  `pdf_add_simple_font`，字宽真实、不进字库），汉字走 `pdf_add_cjk_font` 的非嵌入字体（一字 1em）。
+  只用 CJK 字体时 ASCII 也按全角推进，`BOOK` 会溢出命中框、压到右边 `records` 上（实测过）。
+  字号先按框高 0.82 起，再按"实际字宽 / 框宽"折减，最低 4pt。
+  代价写在 README 里：**底层旧文字仍在**，需要彻底抹除要等 redact 修好。
+
+## 书签 / 目录的三条约定
+
+```
+edit.hpp                  <- OutlineItem{ title, page(1 基), level(0 起) }，正文只有这一种形状
+IPdfBackend              <- outline(in, password) / setOutline(in, out, items, password)
+树 ↔ 拍平                 <- 存的是一棵 /Outlines，给出去的是带 level 的顺序表
+```
+
+- **书签和目录是同一个东西**：PDF 里没有"目录"这个独立概念，两者都是 `/Outlines`
+  那棵树。所以对外只有一棵树、一套读写，UI 面板标题写"书签 / 目录"，不拆成两个功能。
+  拍平模型只有 `{title, page, level}`：`level` 0 = 顶级，`page` 1 基，写 0 表示
+  "没有跳转目标"（纯分组标题），读回来解析不到目标的也记 0。
+- **页码不能靠 `uri` 判空**（踩过的坑）：`fz_load_outline` 内部走 `load_outline_sub`，
+  它对每个节点执行 `onode->page = fz_resolve_link(ctx, doc, onode->uri, ...)`，
+  **`uri` 一定被填成 `#page=N`**，所以按 `cur->uri == nullptr` 判"没有目标"会把整棵树的
+  页码全读成 0。现在的做法是统一 `fz_page_number_from_location(ctx, &doc->super, cur->page)`，
+  返回 `>= 0` 才 +1 存成 1 基，`-1`（外链、坏目标）直接记 0。
+- **写回只能走 outline iterator**：MuPDF 1.26.10 没有 `pdf_document_update_toc`。
+  `pdf_new_outline_iterator` 之后先 `while (item(iter) != nullptr) { if (delete(iter) < 0) break; }`
+  删光旧树（删完迭代器自动停在可插入位置），再逐项 `insert`。层级移动有两个必须遵守的细节：
+  `insert` 之后迭代器处于追加模式（`MOD_AFTER`），**想往下钻必须先 `prev()` 复位再 `down()`**；
+  回上一层用 `up()` 再 `next()`。`level` 跳级一律夹成"上一项 + 1"、首项强制 0，
+  免得写出一个中间断层的目录。每项的 `uri` 填 `#page=N`，交给 `pdf_new_dest_from_link`
+  生成真实 `/Dest`，最后 `pdf_save_document`。
+- **代价**：外链书签（`http://…`、`mailto:`）写回后会退化成"没有跳转目标的分组标题"，
+  因为统一按 `#page=N` 重建。要保留外链得把 `OutlineItem` 扩成带 uri 的结构，
+  目前只有"页内跳转"这一种目标。
+
+三层复用同一份拍平数据，交换格式各按各的：CLI 用 `level<TAB>page<TAB>title` 的文本
+（`outline --txt` 出来的文件能直接喂给 `set-outline --from`），C ABI 用 JSON 数组
+（`pw_pdf_outline` 出）与 `level:page:title` 字符串（前两个冒号切，标题里可以有冒号），
+UI 直接把树 ↔ 顺序表互转（`collectBookmarks()` 递归拍平、`rebuildBookmarkTree()` 用
+`chain[k]` 记住每层"最近节点"再挂子项）。
+
+## 编辑窗口为什么不用 exec()
+
+5 个编辑窗口（批注 / 超链接 / 查找替换 / 替换图片 / 表单）都是 `show()` 打开的**非模态**窗口，
+`MainWindow` 用一个 `QPointer<QDialog> editDialog_` 管"同一时间只有一个"。
+
+原因是这些窗口天生要"一边看预览一边填"：`QDialog::exec()` 是模态，模态期间 Qt 会把主窗口的
+鼠标键盘事件全部拦掉（判据是**模态窗口是否可见**），于是用户在预览里拖框时事件根本到不了
+`PdfViewWidget`——表现就是"点了框选没反应、窗口还挡着预览"。改成非模态后主窗口随时可用；
+点「在预览里框选」时窗口仍然 `hide()`（否则它自己会盖住预览），拖完框 `finishPickMode()` 再
+`show()+raise()` 回来，30 秒不拖由单发 `QTimer` 兜底返回。
+
 ## 下一步（按优先级）
 
-1. 接 MuPDF：`-DPDFWORD_WITH_MUPDF=ON`，按编译报错对齐 SDK 版本（详见 DEPENDENCIES.md）。
-2. 接入了 MuPDF 后要补真机验证：大页面渲染内存、加密 PDF、扫描版 PDF 的文字提取质量。
-3. UI：拖拽入队、批量输出目录选择、页缩略图侧栏、水印/合并/拆分的图形入口。
-4. `pdf → docx` 增强：按 pageText 的行间距做简单段落合并（现在是一行一段）。
-5. 打包：Inno Setup + windeployqt，LibreOffice 走便携目录随包分发的可行性验证（许可证需确认）。
+1. 接 Tesseract（`vcpkg install tesseract:x64-windows` + `chi_sim.traineddata`），
+   实现 `TesseractOcrEngine` 并接进 `makeOcrEngine()` 的回退链。
+2. OCR 的进度回调：现在 `IPdfBackend` 的方法都没有进度参数，长文档（80+ 页）只能看忙碌条；
+   要按页报进度得给 `ocr()` 加回调或走 JobQueue。
+3. OCR 版面还原：现在按行拼平，表格/分栏会乱；要保版式得起"列检测 + 单元格重建"。
+4. UI：页缩略图侧栏、批量 OCR（多文件一次提交）、批量输出目录选择。
+5. 书签：`OutlineItem` 扩出 `uri` 字段，写回时保留外链与已有书签的颜色/斜体等样式位
+   （现在重建只保留标题、页码、层级）。
+5. `pdf → docx` 增强：按 pageText 的行间距做简单段落合并（现在是一行一段）。
+6. 打包：Inno Setup + windeployqt，LibreOffice 走便携目录随包分发的可行性验证（许可证需确认）。

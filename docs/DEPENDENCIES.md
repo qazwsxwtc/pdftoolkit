@@ -1,4 +1,4 @@
-# 外部依赖接入
+# 外部依赖接入（产品名 Pdf-Toolkit，工程标识沿用 pdfword）
 
 骨架里两个外部依赖都是**运行时/构建时可选**的：
 
@@ -243,5 +243,6 @@ LibreOffice: D:\LibreOffice\program\soffice.exe
 LibreOffice 版本: LibreOffice 26.8.3.1 861effc5289d539f15c4c18d1ba8579ffd78728b
 ```
 
-此时 UI 里：双击 PDF 能预览，选文件点"开始转换"能出 pdf/docx，进度条和日志走的是
+此时 UI 里：双击 PDF 能预览，`转换` 菜单 → `开始转换…`（选目标格式后确认）能出 pdf/docx，
+进度条和日志走的
 `JobQueue` 的同一套回调。整条 pdf → docx → pdf 往返已实测（82 页 → 726 段 → 82 页）。

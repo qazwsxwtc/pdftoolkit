@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "pdfword/docx_writer.hpp"
+#include "pdfword/ocr.hpp"
 
 namespace pw {
 
@@ -243,6 +244,7 @@ std::string Converter::capabilityReport() const {
     std::ostringstream oss;
     oss << "PDF 后端: " << backend_->name() << (backend_->available() ? "（可用）" : "（不可用）") << "\n";
     if (!backend_->available()) oss << "  原因: " << backend_->unavailableReason() << "\n";
+    oss << "OCR 引擎: " << ocrCapabilityReport() << "\n";
     oss << describeLibreOffice(config_) << "\n";
     if (office_.available()) oss << "LibreOffice 版本: " << office_.versionString() << "\n";
     oss << "工作目录: " << config_.workDir.string() << "\n";

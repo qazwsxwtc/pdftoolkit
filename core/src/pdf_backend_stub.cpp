@@ -49,7 +49,12 @@ public:
                    const std::string&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
     }
-    Status watermark(const fs::path&, const fs::path&, const std::string&, float) override {
+    Status watermark(const fs::path&, const fs::path&, const std::string&, float,
+                     const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status imageWatermark(const fs::path&, const fs::path&, const fs::path&, float, float, bool,
+                          const std::string&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
     }
     Status assemble(const std::vector<PageRef>&, const fs::path&, const std::string&) override {
@@ -73,6 +78,51 @@ public:
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
     }
     Status compress(const fs::path&, const fs::path&, const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+
+    Status ocr(const fs::path&, const fs::path&, const fs::path&, const std::string&, bool, bool,
+               const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+
+    // ---- 编辑与批注类：stub 一律 BackendMissing ----
+    Status annotate(const fs::path&, const fs::path&, const std::vector<AnnotSpec>&,
+                    const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status addLink(const fs::path&, const fs::path&, const LinkSpec&,
+                   const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Result<std::vector<FormField>> formFields(const fs::path&, const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status fillForm(const fs::path&, const fs::path&, const std::vector<FieldValue>&,
+                    const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status createForm(const fs::path&, const fs::path&, const std::vector<FieldSpec>&,
+                      const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Result<std::vector<TextHit>> findText(const fs::path&, const std::string&, int,
+                                          const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status replaceText(const fs::path&, const fs::path&, const std::string&, const std::string&,
+                       const ReplaceOptions&, const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status replaceImage(const fs::path&, const fs::path&, int, const RectD&, const fs::path&,
+                        const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Result<std::vector<OutlineItem>> outline(const fs::path&, const std::string&) override {
+        return Status::error(ErrorCode::BackendMissing, unavailableReason());
+    }
+    Status setOutline(const fs::path&, const fs::path&, const std::vector<OutlineItem>&,
+                      const std::string&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
     }
 };

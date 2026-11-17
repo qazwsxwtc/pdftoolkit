@@ -68,7 +68,7 @@ std::string envOr(const char* name, const std::string& fallback) {
 
 fs::path defaultWorkDir(const fs::path& exeDir) {
     std::string local = envOr("LOCALAPPDATA", "");
-    if (!local.empty()) return fs::path(local) / "PdfWord" / "work";
+    if (!local.empty()) return fs::path(local) / "Pdf-Toolkit" / "work";
     return exeDir / "work";
 }
 
