@@ -107,6 +107,92 @@ lives in `D:\Windows Kits\10\Include`; it globs `10.*` in each and takes the new
   `makeOcrEngine()` returns null and `ocr()` answers `BackendMissing` (every other PDF feature is
   unaffected).
 
+### Non-ASCII paths and filename encoding (important convention)
+
+The whole pipeline speaks UTF-8 only. Anything that carries a path as `std::string` must be UTF-8:
+
+- **CLI**: on Windows `argv` arrives in the system ANSI code page (CP936 on Chinese systems,
+  CP1252 on Western ones, where a Chinese name collapses to `?`). Every argument goes through
+  `pw::ansiToUtf8()` before it reaches core.
+- **Qt**: `QString::toStdString()` returns the **local 8-bit encoding**, not UTF-8. A path must be
+  written as `pw::fsPath(QString.toUtf8().toStdString())` — this is the easiest spot to get wrong.
+- **core**: `std::string` is always UTF-8; entering `std::filesystem::path` goes through
+  `pw::fsPath()`; leaving toward logs or messages goes through `pw::fsUtf8()`
+  (see the header comment in `core/include/pdfword/path_util.hpp`).
+- **C ABI**: `pdfword.dll` promises “all strings are UTF-8” — that is written into
+  `core/capi/pdfword_c.h`.
+- **MuPDF 1.26**: the narrow-path API is `fopen` underneath and reads the name in the system ANSI
+  code page. So opening uses `fz_open_file_w` → `pdf_open_document_with_stream` (generic documents:
+  `fz_open_document_with_stream` plus the magic string); saving uses `_wfopen(..., L"wb")` +
+  `fz_new_output_with_file_ptr` + `pdf_write_document` (1.26 has no
+  `pdf_save_document_to_output`); images use `fz_open_file_w` + `fz_read_all` +
+  `fz_new_image_from_buffer`. Call `fz_close_output` before `fz_drop_output`, or MuPDF warns about a
+  dropped unclosed output and the tail bytes may never land.
+- **`fstream`**: `std::ofstream(path)` is a narrow-path call on Windows too, so `zip_writer`,
+  `office_runner` and the CLI text/image exports use `path.wstring().c_str()`.
+
+This is not theoretical: `PEDOT_活神经细胞周围聚合_中文翻译.pdf` on a system with a non-Chinese
+code page reports `IoError: 文件不存在` — the file sits on the desktop, but its name was turned into
+the local code page on the way into core, so the bytes no longer matched and `fs::exists` was false.
+
+### Locating LibreOffice (the prerequisite for docx ⇄ pdf)
+
+The `LibreOffice: …` line in the GUI and CLI is the probe result. Candidates are tried in this order,
+and the first one that actually runs wins:
+
+1. `libre_office=<soffice.exe or the LibreOffice directory>` in `pdfword.ini`, **next to the exe**;
+2. the `PW_LIBREOFFICE_PATH` environment variable;
+3. portable layouts: `LibreOffice\program\soffice.exe` beside the exe, or `soffice.exe` beside it;
+4. the registry, `HKLM` / `HKCU` × 64/32-bit views:
+   `SOFTWARE\LibreOffice\UNO\InstallPath` and `...\CurrentVersion\App Paths\soffice.exe`;
+5. `LibreOffice\program\soffice.exe` under `%ProgramFiles%`, `%ProgramFiles(x86)%`,
+   `%ProgramW6432%`;
+6. **drives C–H × {`\LibreOffice`, `\Program Files\LibreOffice`,
+   `\Program Files (x86)\LibreOffice`}**;
+7. every `LibreOffice*` subdirectory under `%ProgramFiles%`, `%ProgramFiles(x86)%` and
+   `%LOCALAPPDATA%\Programs` (covers versioned folder names such as `LibreOffice 7.6`);
+8. finally `soffice.exe` / `soffice.com` on `PATH`.
+
+Step 6 is not optional: LibreOffice may live on any drive. On this machine it is installed at
+`D:\LibreOffice`, and an older build that only checked `Program Files` reported it as
+“not configured”, which made docx ⇄ pdf unavailable.
+
+When nothing is found, the message states the absolute ini path plus the candidates already tried:
+
+```
+LibreOffice: not configured (docx <-> pdf conversion unavailable)
+  put: libre_office=<soffice.exe or the LibreOffice directory> into D:\media\pdfword\publish\pdfword.ini
+  or set PW_LIBREOFFICE_PATH
+  tried: C:\LibreOffice\program\soffice.exe, C:\Program Files\LibreOffice\program\soffice.exe ... 16 places
+```
+
+The smallest usable `pdfword.ini`:
+
+```ini
+libre_office=D:\LibreOffice\program\soffice.exe
+```
+
+**LibreOffice is optional**: PDF preview, split, merge, extract, rotate, crop, insert pages,
+watermark, encrypt/decrypt, compress, OCR, bookmarks, annotations, in-place text editing and
+image-to-PDF all run on MuPDF and do not touch LibreOffice; `pdf → docx` is MuPDF plus the bundled
+`docx_writer` and needs it neither. **Only `docx / doc → pdf` requires LibreOffice.**
+
+To turn the probe off entirely (pure PDF deployment, or a machine that will never convert documents),
+set one environment variable:
+
+```powershell
+setx PW_LIBREOFFICE_DISABLE 1     # takes effect in a new terminal / after restarting the app
+```
+
+The report then reads “LibreOffice: disabled … (PDF preview and everything else unaffected)”, and
+because nothing is scanned the startup probe drops from ~440 ms to ~150 ms. Asking for
+`docx → pdf` returns a message with the ini path instead of hanging.
+
+Verified anchors: `pdfword_cli.exe doctor` reports
+`LibreOffice: D:\LibreOffice\program\soffice.exe` on a machine with 26.8 installed, and
+`pdfword_cli.exe convert 中文名.pdf 中文名.docx --to docx` plus the return trip `docx → pdf`
+both produce files.
+
 ## Running the GUI: pick the right bin directory first
 
 The two build directories produce artifacts with the **same names**, so double-clicking the wrong

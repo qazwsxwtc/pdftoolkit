@@ -13,6 +13,7 @@
 #include <QVBoxLayout>
 
 #include "DialogCommon.h"
+#include "pdfword/path_util.hpp"
 
 CompressDialog::CompressDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                                QWidget* parent)
@@ -50,8 +51,8 @@ void CompressDialog::compressPdf() {
     if (out.isEmpty()) return;
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const pw::Status st = backend_->compress(std::filesystem::path(source_.toStdString()),
-                                             std::filesystem::path(out.toStdString()));
+    const pw::Status st = backend_->compress(pw::fsPath(source_.toUtf8().toStdString()),
+                                             pw::fsPath(out.toUtf8().toStdString()));
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {

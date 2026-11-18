@@ -25,6 +25,7 @@
 #include <QWheelEvent>
 #include <QtGlobal>
 #include <vector>
+#include "pdfword/path_util.hpp"
 
 namespace {
 // 固定缩放档位：8% 到 800%，每次移动一档，比纯乘 1.25 更容易回到整值
@@ -369,7 +370,7 @@ bool PdfViewWidget::openDocument(const QString& path, QString* error) {
         return false;
     }
 
-    auto opened = backend_->open(std::filesystem::path(path.toStdString()));
+    auto opened = backend_->open(pw::fsPath(path.toUtf8().toStdString()));
     if (!opened.ok()) {
         if (error != nullptr) *error = QString::fromStdString(opened.status().toString());
         return false;

@@ -18,6 +18,7 @@
 #include <QVBoxLayout>
 
 #include "DropListWidget.h"
+#include "pdfword/path_util.hpp"
 
 ImageToPdfDialog::ImageToPdfDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& suggestedDir,
                                    QWidget* parent)
@@ -113,7 +114,7 @@ void ImageToPdfDialog::imagesToPdf() {
     }
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const pw::Status st = backend_->imagesToPdf(images, std::filesystem::path(out.toStdString()));
+    const pw::Status st = backend_->imagesToPdf(images, pw::fsPath(out.toUtf8().toStdString()));
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {

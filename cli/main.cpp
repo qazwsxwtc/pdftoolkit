@@ -15,6 +15,7 @@
 #include "pdfword/docx_writer.hpp"
 #include "pdfword/job.hpp"
 #include "pdfword/page_selection.hpp"
+#include "pdfword/path_util.hpp"
 
 namespace fs = std::filesystem;
 using namespace pw;
@@ -125,8 +126,12 @@ Status writeBmp(const RasterImage& image, const fs::path& path) {
         }
     }
 
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return Status::error(ErrorCode::IoError, "无法写入: " + path.string());
+    #ifdef _WIN32
+        std::ofstream out(path.wstring().c_str(), std::ios::binary | std::ios::trunc);
+#else
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+#endif
+    if (!out) return Status::error(ErrorCode::IoError, "无法写入: " + fsUtf8(path));
     out.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
     return Status::success();
 }
@@ -157,7 +162,7 @@ int cmdConvert(const std::vector<std::string>& args) {
         std::cerr << "失败: " << st.toString() << "\n";
         return static_cast<int>(st.code());
     }
-    std::cout << "产物: " << produced.string() << "\n";
+    std::cout << "产物: " << fsUtf8(produced) << "\n";
     return 0;
 }
 
@@ -175,7 +180,7 @@ int cmdInfo(const fs::path& file) {
         return static_cast<int>(opened.code());
     }
     auto doc = opened.value();
-    std::cout << "文件: " << file.string() << "\n"
+    std::cout << "文件: " << fsUtf8(file) << "\n"
               << "后端: " << doc->info().backendName << "\n"
               << "页数: " << doc->info().pageCount << "\n";
     PageInfo pi;
@@ -216,7 +221,7 @@ int cmdRender(const std::vector<std::string>& args) {
             out = args[++i];
         }
     }
-    if (out.empty()) out = file.parent_path() / (file.stem().string() + "_p" + std::to_string(page1) + ".bmp");
+    if (out.empty()) out = file.parent_path() / (fsUtf8(file.stem()) + "_p" + std::to_string(page1) + ".bmp");
 
     Config cfg = loadConfig(gSelf);
     Converter converter(cfg);
@@ -236,7 +241,7 @@ int cmdRender(const std::vector<std::string>& args) {
         std::cerr << st.toString() << "\n";
         return static_cast<int>(st.code());
     }
-    std::cout << "已输出 " << image.width << "x" << image.height << " -> " << out.string() << "\n";
+    std::cout << "已输出 " << image.width << "x" << image.height << " -> " << fsUtf8(out) << "\n";
     return 0;
 }
 
@@ -257,7 +262,7 @@ int reportUnreadable(Converter& converter, const fs::path& path) {
         std::cerr << doc.status().toString() << "\n";
         return static_cast<int>(doc.code());
     }
-    std::cerr << "无法读取页数: " << path.string() << "\n";
+    std::cerr << "无法读取页数: " << fsUtf8(path) << "\n";
     return 1;
 }
 
@@ -312,7 +317,7 @@ int cmdPages(const fs::path& in, const fs::path& out, const std::string& spec, b
     }
     Status st = converter.pdfBackend()->assemble(refs, out, gPassword);
     if (!st.ok()) return reportStatus(st);
-    std::cout << (deleteMode ? "已删除 " : "已重排 ") << refs.size() << " 页 -> " << out.string() << "\n";
+    std::cout << (deleteMode ? "已删除 " : "已重排 ") << refs.size() << " 页 -> " << fsUtf8(out) << "\n";
     return 0;
 }
 
@@ -349,7 +354,7 @@ int cmdRotateCrop(const fs::path& in, const fs::path& out, const std::string& sp
     }
     Status st = converter.pdfBackend()->assemble(refs, out, gPassword);
     if (!st.ok()) return reportStatus(st);
-    std::cout << "已处理 " << pages.value().size() << " 页 -> " << out.string() << "\n";
+    std::cout << "已处理 " << pages.value().size() << " 页 -> " << fsUtf8(out) << "\n";
     return 0;
 }
 
@@ -375,7 +380,7 @@ int cmdInsert(const fs::path& in, const fs::path& out, int afterPage1, int blank
     if (!other.empty()) {
         const int otherTotal = pageCountOf(converter, other);
         if (otherTotal <= 0) {
-            std::cerr << "无法读取被插入文件的页数: " << other.string() << "\n";
+            std::cerr << "无法读取被插入文件的页数: " << fsUtf8(other) << "\n";
             return 1;
         }
         auto pages = parsePageSpec(otherSpec, otherTotal);
@@ -405,7 +410,7 @@ int cmdInsert(const fs::path& in, const fs::path& out, int afterPage1, int blank
 
     Status st = converter.pdfBackend()->assemble(refs, out, gPassword);
     if (!st.ok()) return reportStatus(st);
-    std::cout << "已插入 -> " << out.string() << "（共 " << refs.size() << " 页）\n";
+    std::cout << "已插入 -> " << fsUtf8(out) << "（共 " << refs.size() << " 页）\n";
     return 0;
 }
 
@@ -547,7 +552,7 @@ int cmdOcr(const std::vector<std::string>& args) {
     Config cfg = loadConfig(gSelf);
     Converter converter(cfg);
     Status st = converter.pdfBackend()->ocr(
-        pos[0], wantPdf ? fs::path(pos[1]) : fs::path(), wantTxt ? fs::path(pos[2]) : fs::path(),
+        pos[0], wantPdf ? fsPath(pos[1]) : fs::path(), wantTxt ? fsPath(pos[2]) : fs::path(),
         lang, wantPdf, wantTxt, gPassword);
     if (!st.ok()) return reportStatus(st);
     if (wantPdf) std::cout << "可检索 PDF -> " << pos[1] << "\n";
@@ -1040,7 +1045,11 @@ int cmdOutline(const std::vector<std::string>& args) {
                 "\n";
     }
     if (!txtOut.empty()) {
-        std::ofstream out(txtOut.c_str(), std::ios::binary);
+        #ifdef _WIN32
+    std::ofstream out(fsPath(txtOut).wstring().c_str(), std::ios::binary);
+#else
+    std::ofstream out(txtOut.c_str(), std::ios::binary);
+#endif
         if (!out) {
             std::cerr << "写不了: " << txtOut << "\n";
             return 1;
@@ -1068,7 +1077,11 @@ int cmdSetOutline(const std::vector<std::string>& args) {
         }
     }
     if (!fromFile.empty()) {
-        std::ifstream in(fromFile.c_str(), std::ios::binary);
+        #ifdef _WIN32
+    std::ifstream in(fsPath(fromFile).wstring().c_str(), std::ios::binary);
+#else
+    std::ifstream in(fromFile.c_str(), std::ios::binary);
+#endif
         if (!in) {
             std::cerr << "读不了: " << fromFile << "\n";
             return 1;
@@ -1111,16 +1124,16 @@ int cmdSetOutline(const std::vector<std::string>& args) {
 
 // 前置声明：main 里调用，实现放在 main 之后
 int dispatch(const std::string& cmd, std::vector<std::string>& args);int main(int argc, char** argv) {
-    gSelf = fs::absolute(fs::path(argv[0]));
+    gSelf = fs::absolute(fsPath(ansiToUtf8(argv[0])));
 
     if (argc < 2) {
         printUsage();
         return 1;
     }
 
-    std::string cmd = argv[1];
+    std::string cmd = ansiToUtf8(argv[1]);
     std::vector<std::string> args;
-    for (int i = 2; i < argc; ++i) args.emplace_back(argv[i]);
+    for (int i = 2; i < argc; ++i) args.emplace_back(ansiToUtf8(argv[i]));
 
     // --password 对所有命令通用：先摘出来，剩余参数按原位置语义分派
     for (std::size_t i = 0; i + 1 < args.size();) {
@@ -1180,7 +1193,7 @@ int dispatch(const std::string& cmd, std::vector<std::string>& args) {
             std::cerr << st.toString() << "\n";
             return static_cast<int>(st.code());
         }
-        std::cout << "已合并 -> " << out.string() << "\n";
+        std::cout << "已合并 -> " << fsUtf8(out) << "\n";
         return 0;
     }
     if (cmd == "split" && args.size() >= 3) {
@@ -1283,8 +1296,8 @@ int dispatch(const std::string& cmd, std::vector<std::string>& args) {
         }
         Config cfg = loadConfig(gSelf);
         Converter converter(cfg);
-        Status st = converter.pdfBackend()->imageWatermark(fs::path(args[0]), fs::path(args[1]),
-                                                           fs::path(args[2]), opacity, scale, tile,
+        Status st = converter.pdfBackend()->imageWatermark(fsPath(args[0]), fsPath(args[1]),
+                                                           fsPath(args[2]), opacity, scale, tile,
                                                            gPassword);
         if (!st.ok()) {
             std::cerr << st.toString() << "\n";

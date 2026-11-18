@@ -99,6 +99,79 @@ vcpkg 的 `x64-windows` 是动态库三元组，依赖 DLL（harfbuzz、freetype
 - 找不到 → 打印 `OCR: 没找到 Windows SDK 的 cppwinrt 目录，跳过 Windows OCR`，
   `makeOcrEngine()` 返回空，`ocr()` 直接回 `BackendMissing`（其余 PDF 能力不受影响）。
 
+### 中文路径与文件名编码（重要约定）
+
+整条链路只认 UTF-8，凡是把路径当 `std::string` 传的地方都必须按 UTF-8 处理：
+
+- **CLI**：Windows 上 `argv` 是系统 ANSI 代码页（中文系统 CP936，英文系统 CP1252，中文进去就变成 `?`），
+  进 core 之前一律 `pw::ansiToUtf8()`；
+- **Qt**：`QString::toStdString()` 返回的是**本地 8 位编码**，不是 UTF-8。路径必须写成
+  `pw::fsPath(QString.toUtf8().toStdString())`，这是最容易漏的一处；
+- **core**：`std::string` 只当 UTF-8 用，进 `std::filesystem::path` 一律经 `pw::fsPath()`，
+  往日志/消息输出一律经 `pw::fsUtf8()`（见 `core/include/pdfword/path_util.hpp` 顶部注释）；
+- **C ABI**：`pdfword.dll` 对外契约就是“字符串一律 UTF-8”，`core/capi/pdfword_c.h` 已写明；
+- **MuPDF 1.26**：窄路径接口内部是 `fopen`，按系统 ANSI 解释文件名。所以打开走 `fz_open_file_w`
+  → `pdf_open_document_with_stream`（通用文档走 `fz_open_document_with_stream` + magic），
+  保存走 `_wfopen(..., L"wb")` + `fz_new_output_with_file_ptr` + `pdf_write_document`
+  （1.26 没有 `pdf_save_document_to_output`），读图走 `fz_open_file_w` + `fz_read_all` +
+  `fz_new_image_from_buffer`，保存后记得 `fz_close_output` 再 `fz_drop_output`；
+- **`fstream`**：Windows 上 `std::ofstream(path)` 也吃窄路径，`zip_writer`、`office_runner`、
+  CLI 的文本/图片导出统一用 `path.wstring().c_str()`。
+
+之所以这么较真，是因为真踩过：`PEDOT_活神经细胞周围聚合_中文翻译.pdf` 在非中文代码页的系统上会报
+`IoError: 文件不存在` —— 文件明明躺在桌面，但文件名进 core 时已经被转成本地代码页，字节对不上，
+`fs::exists` 直接判 false。
+
+### LibreOffice 定位（docx ⇄ pdf 转换的前提）
+
+界面/CLI 里那句 `LibreOffice: …` 就是探测结果。程序按下面顺序找 `soffice.exe`，第一个能跑通的就用：
+
+1. `pdfword.ini` 里的 `libre_office=<soffice.exe 或 LibreOffice 目录>`（ini 放 **exe 同目录**）；
+2. 环境变量 `PW_LIBREOFFICE_PATH`；
+3. 便携版：exe 同目录下的 `LibreOffice\program\soffice.exe`，或 exe 同目录的 `soffice.exe`；
+4. 注册表 `HKLM` / `HKCU` × 64/32 位视图的
+   `SOFTWARE\LibreOffice\UNO\InstallPath` 和 `...\CurrentVersion\App Paths\soffice.exe`；
+5. `%ProgramFiles%`、`%ProgramFiles(x86)%`、`%ProgramW6432%` 下的 `LibreOffice\program\soffice.exe`；
+6. **C–H 六个盘符 × {`\LibreOffice`、`\Program Files\LibreOffice`、`\Program Files (x86)\LibreOffice`}**；
+7. `%ProgramFiles%`、`%ProgramFiles(x86)%`、`%LOCALAPPDATA%\Programs` 下所有 `LibreOffice*` 子目录
+   （覆盖 `LibreOffice 7.6` 这类带版本号的目录名）；
+8. 最后扫 `PATH` 里的 `soffice.exe` / `soffice.com`。
+
+第 6 条不能省：LibreOffice 允许装到任意盘，本机就装在 `D:\LibreOffice`，
+只查 `Program Files` 的旧版本会把它判成“未配置”，于是 docx ⇄ pdf 直接不可用。
+
+没找到时，提示会把 ini 的绝对路径和已经试过的路径一起写出来，照着填就行：
+
+```
+LibreOffice: 未配置（docx ⇄ pdf 转换不可用）
+  填法：在 D:\media\pdfword\publish\pdfword.ini 里加一行  libre_office=<soffice.exe 或 LibreOffice 目录>
+  或设环境变量 PW_LIBREOFFICE_PATH
+  已尝试：C:\LibreOffice\program\soffice.exe、C:\Program Files\LibreOffice\program\soffice.exe…等 16 处
+```
+
+最小可用的 `pdfword.ini`：
+
+```ini
+libre_office=D:\LibreOffice\program\soffice.exe
+```
+
+**不装 LibreOffice 也能用**：PDF 预览、拆分、合并、抽取、旋转、裁剪、插页、水印、加解密、压缩、
+OCR、书签、批注、就地改字、图片转 PDF 全部走 MuPDF，和 LibreOffice 无关；`pdf → docx` 也是
+MuPDF + 自带的 `docx_writer`，同样不需要它。**只有 `docx / doc → pdf` 需要 LibreOffice。**
+
+想彻底关掉探测（纯 PDF 部署，或确认这台机器永远不做文档转换），设一个环境变量即可：
+
+```powershell
+setx PW_LIBREOFFICE_DISABLE 1     # 新开的终端/重启程序后生效；删掉该变量即恢复探测
+```
+
+此时报告显示“LibreOffice: 已关闭…（PDF 预览等其他功能不受影响）”，并且因为完全不扫盘，
+启动探测从 ~440 ms 降到 ~150 ms。点“开始转换 docx→pdf”会给出带 ini 路径的提示，不会卡住。
+
+锚点（已实测）：`pdfword_cli.exe doctor` 在装了 26.8 的机器上输出
+`LibreOffice: D:\LibreOffice\program\soffice.exe`；
+`pdfword_cli.exe convert 中文名.pdf 中文名.docx --to docx` 与回程 `docx → pdf` 都能出件。
+
 ## 跑界面：先认准哪个 bin 目录
 
 两个构建目录的产物**同名**，双击错了就会看到“PDF 后端: stub（不可用）”：

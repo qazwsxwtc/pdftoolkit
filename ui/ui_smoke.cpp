@@ -70,6 +70,7 @@
 #include "WatermarkDialog.h"
 #include "pdfword/converter.hpp"
 #include "pdfword/job.hpp"
+#include "pdfword/path_util.hpp"
 
 namespace {
 
@@ -95,7 +96,7 @@ int main(int argc, char** argv) {
     // 冒烟里会 close() 主窗口再造第二个来验证持久化，别让 Qt 因此直接退出进程
     app.setQuitOnLastWindowClosed(false);
 
-    pw::Config config = pw::loadConfig(std::filesystem::path("pdfword.ini"));
+    pw::Config config = pw::loadConfig(pw::fsPath("pdfword.ini"));
     auto converter = std::make_shared<pw::Converter>(config);
     auto jobs = std::make_shared<pw::JobQueue>(converter);
 
@@ -263,7 +264,7 @@ int main(int argc, char** argv) {
     // 读到页数才验证"合法范围"，读不到（加密件）时验证"必须拦住"。
     int extractablePages = 0;
     if (!sample.isEmpty()) {
-        auto probe = converter->pdfBackend()->open(std::filesystem::path(sample.toStdString()),
+        auto probe = converter->pdfBackend()->open(pw::fsPath(sample.toUtf8().toStdString()),
                                                    std::string());
         if (probe.ok()) extractablePages = probe.value()->info().pageCount;
     }
@@ -410,7 +411,7 @@ int main(int argc, char** argv) {
     // ---- 任务队列带密码：加密 PDF -> docx，验证 password 真透传到 ConvertOptions ----
     if (!password.isEmpty()) {
         const std::filesystem::path out(dst.toStdString());
-        jobs->enqueue(std::filesystem::path(sample.toStdString()), out, "docx", password.toStdString());
+        jobs->enqueue(pw::fsPath(sample.toUtf8().toStdString()), out, "docx", password.toStdString());
         jobs->waitAll();
         auto snap = jobs->snapshot();
         check(!snap.empty(), "任务已入队");
@@ -803,7 +804,7 @@ int main(int argc, char** argv) {
             }
 
             // 用样本的一份副本走"列表双击 → 预览 → 读目录"，产物落在测试目录里，不写样本目录
-            const std::filesystem::path workDir = std::filesystem::path(dst.toStdString()).parent_path();
+            const std::filesystem::path workDir = pw::fsPath(dst.toUtf8().toStdString()).parent_path();
             const QString workCopy = QString::fromStdString((workDir / "ol_smoke.pdf").string());
             QFile::remove(workCopy);
             const bool copied = QFile::copy(sample, workCopy);
@@ -831,7 +832,7 @@ int main(int argc, char** argv) {
             };
             if (bmTree != nullptr) walkTree(bmTree->invisibleRootItem());
             const auto refOutline = converter->pdfBackend()->outline(
-                std::filesystem::path(sample.toStdString()), std::string());
+                pw::fsPath(sample.toUtf8().toStdString()), std::string());
             check(refOutline.ok(), "core 能读出样本 PDF 既有书签");
             check(bmTree != nullptr && treeCount == int(refOutline.value().size()),
                   "面板里的条目数 = core 读出的书签条数");
@@ -934,7 +935,7 @@ int main(int argc, char** argv) {
         // ---- 预览里就地编辑：框住一块就改、拖个框打字就加，写完预览自动重载 ----
         {
             const std::filesystem::path workDir =
-                std::filesystem::path(dst.toStdString()).parent_path();
+                pw::fsPath(dst.toUtf8().toStdString()).parent_path();
             const std::filesystem::path srcCopy = workDir / "inline_smoke.pdf";
             QFile::remove(QString::fromStdString(srcCopy.string()));
             check(QFile::copy(sample, QString::fromStdString(srcCopy.string())),
@@ -959,7 +960,7 @@ int main(int argc, char** argv) {
             check(view != nullptr && view->currentPage() == 2, "改完预览还停在原来那一页");
 
             auto hits = converter->pdfBackend()->findText(
-                std::filesystem::path(outPath.toStdString()), std::string("SMOKE-REPLACED"));
+                pw::fsPath(outPath.toUtf8().toStdString()), std::string("SMOKE-REPLACED"));
             check(hits.ok() && !hits.value().empty(), "改进去的新文字能在结果文件里搜到");
             check(hits.ok() && !hits.value().empty() && hits.value().front().page == 1,
                   "新文字落在第 2 页（0 基页号 1）");
@@ -970,8 +971,8 @@ int main(int argc, char** argv) {
             std::string t9edit;
             {
                 // 用完就放：这两个文档握着文件句柄，不放掉后面“原地加字”会删不掉旧件
-                auto docOrig = converter->pdfBackend()->open(std::filesystem::path(srcCopy.string()));
-                auto docEdit = converter->pdfBackend()->open(std::filesystem::path(outPath.toStdString()));
+                auto docOrig = converter->pdfBackend()->open(pw::fsPath(srcCopy.string()));
+                auto docEdit = converter->pdfBackend()->open(pw::fsPath(outPath.toUtf8().toStdString()));
                 bothOpen = docOrig.ok() && docEdit.ok();
                 if (bothOpen) {
                     docOrig.value()->pageText(8, &t9orig);
@@ -991,7 +992,7 @@ int main(int argc, char** argv) {
             }
             check(!addPath.isEmpty() && QFileInfo::exists(addPath),
                   "拖个框直接打字就能往页面上加文字");
-            auto added = converter->pdfBackend()->findText(std::filesystem::path(addPath.toStdString()),
+            auto added = converter->pdfBackend()->findText(pw::fsPath(addPath.toUtf8().toStdString()),
                                                            std::string("加字冒烟"));
             check(added.ok() && added.value().size() == 1,
                   "加进去的文字能在结果文件里搜到（中文也认）");

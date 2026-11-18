@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <fstream>
 #include <vector>
+#include "pdfword/path_util.hpp"
 
 namespace pw {
 namespace detail {
@@ -116,13 +117,17 @@ Status ZipWriter::write(const fs::path& path) {
     append32(file, centralStart);
     append16(file, 0);
 
+    #ifdef _WIN32
+    std::ofstream out(path.wstring().c_str(), std::ios::binary | std::ios::trunc);
+#else
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
+#endif
     if (!out) {
-        return Status::error(ErrorCode::IoError, "无法写入文件: " + path.string());
+        return Status::error(ErrorCode::IoError, "无法写入文件: " + fsUtf8(path));
     }
     out.write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
     if (!out) {
-        return Status::error(ErrorCode::IoError, "写入过程中失败: " + path.string());
+        return Status::error(ErrorCode::IoError, "写入过程中失败: " + fsUtf8(path));
     }
     return Status::success();
 }

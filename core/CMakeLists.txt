@@ -1,6 +1,7 @@
 # core：纯 C++17，不依赖 Qt，不依赖任何第三方库（MuPDF 可选）
 add_library(pdfword_core STATIC
     src/result.cpp
+    src/path_util.cpp
     src/config.cpp
     src/office_runner.cpp
     src/page_selection.cpp

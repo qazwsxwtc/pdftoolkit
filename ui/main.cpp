@@ -5,6 +5,7 @@
 #include "MainWindow.h"
 #include "pdfword/converter.hpp"
 #include "pdfword/job.hpp"
+#include "pdfword/path_util.hpp"
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
@@ -16,7 +17,7 @@ int main(int argc, char** argv) {
 
     // 配置与 core 完全一致：同目录 pdfword.ini / 环境变量 / 注册表自动探测
     pw::Config config =
-        pw::loadConfig(std::filesystem::path(QApplication::applicationFilePath().toStdString()));
+        pw::loadConfig(pw::fsPath(QApplication::applicationFilePath().toUtf8().toStdString()));
 
     auto converter = std::make_shared<pw::Converter>(config);
     auto jobs = std::make_shared<pw::JobQueue>(converter);

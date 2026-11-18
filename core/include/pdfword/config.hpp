@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace pw {
 
@@ -18,6 +19,11 @@ struct Config {
     int officeTimeoutMs = 180000;
     int renderMaxSide = 4096;    // 单页渲染长边上限，防止超大页面炸内存
 
+    // 未找到 LibreOffice 时，这里保留探测过的前若干路径，供能力报告告诉用户
+    // "程序找过哪里"，而不是只丢一句"未配置"。
+    std::vector<std::string> libreOfficeCandidates;
+    bool libreOfficeDisabled = false;   // PW_LIBREOFFICE_DISABLE 显式关掉文档转换
+
     bool libreOfficeConfigured() const { return !libreOfficePath.empty(); }
 };
 
@@ -31,5 +37,8 @@ bool probeLibreOffice(const fs::path& candidate, fs::path* resolved, std::string
 
 // 供 CLI/UI 展示的一行状态文本
 std::string describeLibreOffice(const Config& config);
+
+// 转换失败时给用户看的配置指引（含 ini 绝对路径），避免只丢一句“未配置”。
+std::string libreOfficeSetupHint(const Config& config);
 
 }  // namespace pw

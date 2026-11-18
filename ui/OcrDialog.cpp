@@ -22,6 +22,7 @@
 #include <pdfword/ocr.hpp>
 
 #include "DialogCommon.h"
+#include "pdfword/path_util.hpp"
 
 OcrDialog::OcrDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                      QWidget* parent)
@@ -228,9 +229,9 @@ void OcrDialog::startOcr() {
             });
 
     auto future = QtConcurrent::run([backend, src, pdf, txt, language, wantPdf, wantTxt] {
-        return backend->ocr(std::filesystem::path(src),
-                            wantPdf ? std::filesystem::path(pdf) : std::filesystem::path(),
-                            wantTxt ? std::filesystem::path(txt) : std::filesystem::path(), language,
+        return backend->ocr(pw::fsPath(src),
+                            wantPdf ? pw::fsPath(pdf) : std::filesystem::path(),
+                            wantTxt ? pw::fsPath(txt) : std::filesystem::path(), language,
                             wantPdf, wantTxt);
     });
     watcher->setFuture(future);

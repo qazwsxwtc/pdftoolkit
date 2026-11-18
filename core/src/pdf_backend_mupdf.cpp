@@ -23,11 +23,97 @@
 #include <vector>
 
 #include "pdfword/ocr.hpp"
+#include "pdfword/path_util.hpp"
 
 namespace pw {
 namespace {
 
 constexpr float kMaxRenderPixels = 16384.0f * 16384.0f;
+
+// ---------------------------------------------------------------------------
+// 路径桥接：中文文件名的读写
+// MuPDF 的窄路径接口内部是 fopen，按系统 ANSI 代码页解释文件名。中文系统上
+// UTF-8 的字节恰好能当 GBK 用，一旦换到英文系统，含中文的文件名就全打不开，
+// 表现是「文件明明在桌面，却报文件不存在」。这里统一绕开窄路径：
+//   打开 → fz_open_file_w（宽字符）
+//   保存 → _wfopen + fz_new_output_with_file_ptr + pdf_write_document
+//   读图 → fz_open_file_w + fz_read_all + fz_new_image_from_buffer
+// ---------------------------------------------------------------------------
+
+static pdf_document* openPdfDocU8(fz_context* ctx, const fs::path& p) {
+#ifdef _WIN32
+    fz_stream* stm = fz_open_file_w(ctx, p.wstring().c_str());
+    pdf_document* doc = nullptr;
+    fz_var(doc);
+    fz_try(ctx) { doc = pdf_open_document_with_stream(ctx, stm); }
+    fz_always(ctx) { fz_drop_stream(ctx, stm); }
+    fz_catch(ctx) { fz_rethrow(ctx); }
+    return doc;
+#else
+    return pdf_open_document(ctx, fsUtf8(p).c_str());
+#endif
+}
+
+static fz_document* openAnyDocU8(fz_context* ctx, const fs::path& p) {
+#ifdef _WIN32
+    fz_stream* stm = fz_open_file_w(ctx, p.wstring().c_str());
+    fz_document* doc = nullptr;
+    fz_var(doc);
+    fz_try(ctx) { doc = fz_open_document_with_stream(ctx, "application/pdf", stm); }
+    fz_always(ctx) { fz_drop_stream(ctx, stm); }
+    fz_catch(ctx) { fz_rethrow(ctx); }
+    return doc;
+#else
+    return fz_open_document(ctx, fsUtf8(p).c_str());
+#endif
+}
+
+static void savePdfDocU8(fz_context* ctx, pdf_document* doc, const fs::path& p,
+                         const pdf_write_options* opts) {
+#ifdef _WIN32
+    FILE* f = ::_wfopen(p.wstring().c_str(), L"wb");
+    if (f == nullptr) {
+        fz_throw(ctx, FZ_ERROR_ARGUMENT, "cannot write file: %s", fsUtf8(p).c_str());
+    }
+    fz_output* out = nullptr;
+    fz_var(out);
+    fz_try(ctx) {
+        out = fz_new_output_with_file_ptr(ctx, f);
+        pdf_write_document(ctx, doc, out, opts);
+    }
+    fz_always(ctx) {
+        // MuPDF 要求先 close（把缓冲区刷进 FILE*），再 drop；否则会打
+        // "warning: dropping unclosed output"，且末尾数据可能没落盘。
+        if (out != nullptr) fz_close_output(ctx, out);
+        fz_drop_output(ctx, out);
+    }
+    fz_catch(ctx) { fz_rethrow(ctx); }
+#else
+    pdf_save_document(ctx, doc, fsUtf8(p).c_str(), opts);
+#endif
+}
+
+static fz_image* loadImageU8(fz_context* ctx, const fs::path& p) {
+#ifdef _WIN32
+    fz_stream* stm = fz_open_file_w(ctx, p.wstring().c_str());
+    fz_buffer* buf = nullptr;
+    fz_image* img = nullptr;
+    fz_var(buf);
+    fz_var(img);
+    fz_try(ctx) {
+        buf = fz_read_all(ctx, stm, 0);
+        img = fz_new_image_from_buffer(ctx, buf);
+    }
+    fz_always(ctx) {
+        fz_drop_buffer(ctx, buf);
+        fz_drop_stream(ctx, stm);
+    }
+    fz_catch(ctx) { fz_rethrow(ctx); }
+    return img;
+#else
+    return fz_new_image_from_file(ctx, fsUtf8(p).c_str());
+#endif
+}
 
 // MuPDF 的 stext 给的是 Unicode 码位（fz_stext_char::c），必须按 UTF-8 编码输出，
 // 否则中文/日文/韩文会被压成一个 '?'。core 对外统一用 UTF-8。
@@ -253,7 +339,7 @@ Status writeGraftedRange(fz_context* ctx, const std::vector<fs::path>& inputs, c
         if (failed || pageCount <= 0) break;
 
         pdf_document* src = nullptr;
-        fz_try(ctx) { src = pdf_open_document(ctx, in.string().c_str()); }
+        fz_try(ctx) { src = openPdfDocU8(ctx, in); }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
             failed = true;
@@ -290,7 +376,7 @@ Status writeGraftedRange(fz_context* ctx, const std::vector<fs::path>& inputs, c
     if (!failed) {
         pdf_write_options opts = writeOptions();
         if (opts.do_garbage < 3) opts.do_garbage = 3;
-        fz_try(ctx) { pdf_save_document(ctx, dst, output.string().c_str(), &opts); }
+        fz_try(ctx) { savePdfDocU8(ctx, dst, output, &opts); }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
             failed = true;
@@ -322,7 +408,7 @@ Status writeGraftedPages(fz_context* ctx, const fs::path& input, const fs::path&
         return Status::error(ErrorCode::IoError, failed ? msg : "无法创建输出 PDF");
     }
 
-    fz_try(ctx) { src = pdf_open_document(ctx, input.string().c_str()); }
+    fz_try(ctx) { src = openPdfDocU8(ctx, input); }
     fz_catch(ctx) {
         std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
         failed = true;
@@ -379,7 +465,7 @@ Status writeGraftedPages(fz_context* ctx, const fs::path& input, const fs::path&
     if (!failed) {
         pdf_write_options opts = writeOptions();
         if (opts.do_garbage < 3) opts.do_garbage = 3;
-        fz_try(ctx) { pdf_save_document(ctx, dst, output.string().c_str(), &opts); }
+        fz_try(ctx) { savePdfDocU8(ctx, dst, output, &opts); }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
             failed = true;
@@ -412,14 +498,14 @@ pdf_document* openSourceDocument(fz_context* ctx, const fs::path& path, const st
     std::string err;
     bool failed = false;
 
-    fz_try(ctx) { doc = pdf_open_document(ctx, path.string().c_str()); }
+    fz_try(ctx) { doc = openPdfDocU8(ctx, path); }
     fz_catch(ctx) {
         err = fz_caught_message(ctx);
         failed = true;
     }
     if (failed || doc == nullptr) {
         if (doc != nullptr) pdf_drop_document(ctx, doc);
-        *errMsg = failed ? err : ("无法打开 " + path.filename().string());
+        *errMsg = failed ? err : ("无法打开 " + fsUtf8(path.filename()));
         return nullptr;
     }
 
@@ -535,7 +621,7 @@ Status writeAssembled(fz_context* ctx, const std::vector<PageRef>& pages, const 
         pdf_document* src = nullptr;
         pdf_graft_map* map = nullptr;
         for (auto& item : srcCache) {
-            if (item.key == ref.source.string()) {
+            if (item.key == fsUtf8(ref.source)) {
                 src = item.doc;
                 map = item.map;
                 break;
@@ -554,7 +640,7 @@ Status writeAssembled(fz_context* ctx, const std::vector<PageRef>& pages, const 
                 failed = true;
                 break;
             }
-            srcCache.push_back({ref.source.string(), src, map});
+            srcCache.push_back({fsUtf8(ref.source), src, map});
         }
 
         int total = 0;
@@ -566,7 +652,7 @@ Status writeAssembled(fz_context* ctx, const std::vector<PageRef>& pages, const 
         if (failed) break;
         if (ref.pageIndex < 0 || ref.pageIndex >= total) {
             err = "页码 " + std::to_string(ref.pageIndex + 1) + " 超出范围（" +
-                  ref.source.filename().string() + " 共 " + std::to_string(total) + " 页）";
+                  fsUtf8(ref.source.filename()) + " 共 " + std::to_string(total) + " 页）";
             failed = true;
             break;
         }
@@ -590,7 +676,7 @@ Status writeAssembled(fz_context* ctx, const std::vector<PageRef>& pages, const 
         // graft 会给每页资源各留一份副本，不去重时 82 页能膨胀近一倍。
         // do_garbage: 1=回收, 2=重编号, 3=去重复（MuPDF 的语义，取最大值把三件事都做上）
         if (opts.do_garbage < 3) opts.do_garbage = 3;
-        fz_try(ctx) { pdf_save_document(ctx, dst, output.string().c_str(), &opts); }
+        fz_try(ctx) { savePdfDocU8(ctx, dst, output, &opts); }
         fz_catch(ctx) {
             err = fz_caught_message(ctx);
             failed = true;
@@ -627,7 +713,7 @@ Status writeImagesAsPdf(fz_context* ctx, const std::vector<ImagePage>& images, c
         pdf_obj* page = nullptr;
 
         fz_try(ctx) {
-            image = fz_new_image_from_file(ctx, item.path.string().c_str());
+            image = loadImageU8(ctx, item.path);
             const double dpi = (item.dpi > 1.0) ? item.dpi : 96.0;
             const double wpt = image->w * 72.0 / dpi;
             const double hpt = image->h * 72.0 / dpi;
@@ -678,7 +764,7 @@ Status writeImagesAsPdf(fz_context* ctx, const std::vector<ImagePage>& images, c
 
     if (!failed) {
         pdf_write_options opts = writeOptions();
-        fz_try(ctx) { pdf_save_document(ctx, dst, output.string().c_str(), &opts); }
+        fz_try(ctx) { savePdfDocU8(ctx, dst, output, &opts); }
         fz_catch(ctx) {
             err = fz_caught_message(ctx);
             failed = true;
@@ -751,7 +837,7 @@ Status writeMetadata(fz_context* ctx, const fs::path& input, const fs::path& out
         setText(PDF_NAME(Producer), meta.producer);
 
         pdf_write_options opts = writeOptions();
-        pdf_save_document(ctx, doc, output.string().c_str(), &opts);
+        savePdfDocU8(ctx, doc, output, &opts);
     }
     fz_catch(ctx) {
         err = fz_caught_message(ctx);
@@ -776,7 +862,7 @@ Status resaveWithOptions(fz_context* ctx, const fs::path& input, const fs::path&
         if (subsetFonts) pdf_subset_fonts(ctx, doc, 0, nullptr);
         pdf_write_options opts = writeOptions();
         if (configure) configure(&opts);
-        pdf_save_document(ctx, doc, output.string().c_str(), &opts);
+        savePdfDocU8(ctx, doc, output, &opts);
     }
     fz_catch(ctx) {
         err = fz_caught_message(ctx);
@@ -880,7 +966,7 @@ Status writeOutline(fz_context* ctx, const fs::path& input, const fs::path& outp
         }
 
         pdf_write_options opts = writeOptions();
-        pdf_save_document(ctx, doc, output.string().c_str(), &opts);
+        savePdfDocU8(ctx, doc, output, &opts);
     }
     fz_catch(ctx) {
         err = fz_caught_message(ctx);
@@ -1098,7 +1184,7 @@ Status writeWatermarked(fz_context* ctx, const fs::path& input, const fs::path& 
         return Status::error(ErrorCode::IoError, failed ? msg : "无法创建输出 PDF");
     }
 
-    fz_try(ctx) { src = pdf_open_document(ctx, input.string().c_str()); }
+    fz_try(ctx) { src = openPdfDocU8(ctx, input); }
     fz_catch(ctx) {
         std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
         failed = true;
@@ -1358,7 +1444,7 @@ Status writeWatermarked(fz_context* ctx, const fs::path& input, const fs::path& 
             // 子集化失败不影响正确性，只是体积偏大，这里不当作错误
         }
         pdf_write_options opts = writeOptions();
-        fz_try(ctx) { pdf_save_document(ctx, dst, output.string().c_str(), &opts); }
+        fz_try(ctx) { savePdfDocU8(ctx, dst, output, &opts); }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
             failed = true;
@@ -1632,7 +1718,7 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
     int total = 0;
 
     fz_try(ctx) {
-        srcDoc = fz_open_document(ctx, input.string().c_str());
+        srcDoc = openAnyDocU8(ctx, input);
         if (srcDoc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
         if (fz_needs_password(ctx, srcDoc)) {
             if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，需要密码");
@@ -1729,7 +1815,7 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
             fz_try(ctx) { pdf_subset_fonts(ctx, dst, 0, nullptr); }
             fz_catch(ctx) { /* 子集化失败只影响体积，不影响正确性 */ }
             pdf_write_options opts = writeOptions();
-            pdf_save_document(ctx, dst, outPdf.string().c_str(), &opts);
+            savePdfDocU8(ctx, dst, outPdf, &opts);
         }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -1738,10 +1824,14 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
     }
 
     if (!failed && generateTxt && !outTxt.empty()) {
+        #ifdef _WIN32
+        std::ofstream ofs(outTxt.wstring().c_str(), std::ios::binary | std::ios::trunc);
+#else
         std::ofstream ofs(outTxt, std::ios::binary | std::ios::trunc);
+#endif
         if (!ofs) {
             failed = true;
-            std::snprintf(msg, sizeof(msg), "无法写入文本文件: %s", outTxt.string().c_str());
+            std::snprintf(msg, sizeof(msg), "无法写入文本文件: %s", fsUtf8(outTxt).c_str());
         } else {
             ofs.write(allText.data(), static_cast<std::streamsize>(allText.size()));
         }
@@ -2025,7 +2115,7 @@ Status writeAnnots(fz_context* ctx, const fs::path& input, const fs::path& outpu
     pdf_obj* fontRef = nullptr;
 
     fz_try(ctx) {
-        doc = pdf_open_document(ctx, input.string().c_str());
+        doc = openPdfDocU8(ctx, input);
         if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
         if (fz_needs_password(ctx, reinterpret_cast<fz_document*>(doc))) {
             if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，需要密码");
@@ -2205,7 +2295,7 @@ Status writeAnnots(fz_context* ctx, const fs::path& input, const fs::path& outpu
             // 不要在这里调 pdf_subset_fonts：批注用的是“非嵌入 CJK 字体”，
             // 子集化反而会把它（约 19MB 的内置字体程序）整块嵌进产物里。
             pdf_write_options opts = writeOptions();
-            pdf_save_document(ctx, doc, output.string().c_str(), &opts);
+            savePdfDocU8(ctx, doc, output, &opts);
         }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -2288,7 +2378,7 @@ Status writeLink(fz_context* ctx, const fs::path& input, const fs::path& output,
     bool failed = false;
     pdf_document* doc = nullptr;
     fz_try(ctx) {
-        doc = pdf_open_document(ctx, input.string().c_str());
+        doc = openPdfDocU8(ctx, input);
         if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
         if (fz_needs_password(ctx, reinterpret_cast<fz_document*>(doc))) {
             if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，需要密码");
@@ -2317,7 +2407,7 @@ Status writeLink(fz_context* ctx, const fs::path& input, const fs::path& output,
         PageTransform t = pageTransform(ctx, pdf_lookup_page_obj(ctx, doc, link.page));
         pdf_create_link(ctx, page, rectToUser(t, link.rect), uri.c_str());
         pdf_write_options opts = writeOptions();
-        pdf_save_document(ctx, doc, output.string().c_str(), &opts);
+        savePdfDocU8(ctx, doc, output, &opts);
     }
     fz_catch(ctx) {
         std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -2336,7 +2426,7 @@ Status writeLink(fz_context* ctx, const fs::path& input, const fs::path& output,
 
 // 统一的打开（含密码校验）。失败时抛 MuPDF 异常，调用方用 fz_catch 接。
 pdf_document* openPdfForEdit(fz_context* ctx, const fs::path& input, const std::string& password) {
-    pdf_document* doc = pdf_open_document(ctx, input.string().c_str());
+    pdf_document* doc = openPdfDocU8(ctx, input);
     if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
     fz_document* fzdoc = reinterpret_cast<fz_document*>(doc);
     if (fz_needs_password(ctx, fzdoc)) {
@@ -2517,7 +2607,7 @@ Status writeFormFill(fz_context* ctx, const fs::path& input, const fs::path& out
     if (!failed) {
         fz_try(ctx) {
             pdf_write_options opts = writeOptions();
-            pdf_save_document(ctx, doc, output.string().c_str(), &opts);
+            savePdfDocU8(ctx, doc, output, &opts);
         }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -2735,7 +2825,7 @@ Status writeFormCreate(fz_context* ctx, const fs::path& input, const fs::path& o
         }
 
         pdf_write_options opts = writeOptions();
-        pdf_save_document(ctx, doc, output.string().c_str(), &opts);
+        savePdfDocU8(ctx, doc, output, &opts);
     }
     fz_catch(ctx) {
         std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -3284,7 +3374,7 @@ Status writeReplaceText(fz_context* ctx, const fs::path& input, const fs::path& 
         fz_try(ctx) {
             // 同上：写回的新文字用的是非嵌入 CJK 字体，不做子集化（否则体积暴涨）
             pdf_write_options wo = writeOptions();
-            pdf_save_document(ctx, doc, output.string().c_str(), &wo);
+            savePdfDocU8(ctx, doc, output, &wo);
         }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -3366,7 +3456,7 @@ Status writeTextAtRect(fz_context* ctx, const fs::path& input, const fs::path& o
     if (!failed) {
         fz_try(ctx) {
             pdf_write_options wo = writeOptions();
-            pdf_save_document(ctx, doc, output.string().c_str(), &wo);
+            savePdfDocU8(ctx, doc, output, &wo);
         }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -3402,7 +3492,7 @@ Status writeReplaceImage(fz_context* ctx, const fs::path& input, const fs::path&
         if (pageIndex < 0 || pageIndex >= pageCount) {
             fz_throw(ctx, FZ_ERROR_GENERIC, "页号越界");
         }
-        image = fz_new_image_from_file(ctx, imagePath.string().c_str());
+        image = loadImageU8(ctx, imagePath);
     }
     fz_catch(ctx) {
         std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -3510,7 +3600,7 @@ Status writeReplaceImage(fz_context* ctx, const fs::path& input, const fs::path&
             }
 
             pdf_write_options wo = writeOptions();
-            pdf_save_document(ctx, doc, output.string().c_str(), &wo);
+            savePdfDocU8(ctx, doc, output, &wo);
         }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
@@ -3549,7 +3639,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
         return Status::error(ErrorCode::IoError, failed ? msg : "无法创建输出 PDF");
     }
 
-    fz_try(ctx) { src = pdf_open_document(ctx, input.string().c_str()); }
+    fz_try(ctx) { src = openPdfDocU8(ctx, input); }
     fz_catch(ctx) {
         std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
         failed = true;
@@ -3573,7 +3663,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
             total = pdf_count_pages(ctx, src);
             // 与文字版相同：整份文档共用一个 graft map，源页资源只拷一次
             graft_map = pdf_new_graft_map(ctx, dst);
-            image = fz_new_image_from_file(ctx, imagePath.string().c_str());
+            image = loadImageU8(ctx, imagePath);
             // 图片只嵌入一次（整份文档共用一个 image XObject），
             // 否则平铺时每一格都会复制一份像素数据，输出能涨到几十 MB。
             if (image != nullptr) imgObj = pdf_add_image(ctx, dst, image);
@@ -3586,7 +3676,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
 
     if (!failed && image == nullptr) {
         failed = true;
-        std::snprintf(msg, sizeof(msg), "无法读取水印图片: %s", imagePath.string().c_str());
+        std::snprintf(msg, sizeof(msg), "无法读取水印图片: %s", fsUtf8(imagePath).c_str());
     }
 
     // 图片宽高比（fz_image 的 w/h 是像素尺寸，与 DPI 无关，只用比例）
@@ -3743,7 +3833,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
 
     if (!failed) {
         pdf_write_options opts = writeOptions();
-        fz_try(ctx) { pdf_save_document(ctx, dst, output.string().c_str(), &opts); }
+        fz_try(ctx) { savePdfDocU8(ctx, dst, output, &opts); }
         fz_catch(ctx) {
             std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
             failed = true;
@@ -3771,7 +3861,7 @@ public:
                                                const std::string& password) override {
         std::error_code ec;
         if (!fs::exists(path, ec)) {
-            return Status::error(ErrorCode::IoError, "文件不存在: " + path.string());
+            return Status::error(ErrorCode::IoError, "文件不存在: " + fsUtf8(path));
         }
 
         fz_context* ctx = fz_new_context(nullptr, nullptr, FZ_STORE_DEFAULT);
@@ -3783,7 +3873,7 @@ public:
         bool encrypted = false;
         fz_try(ctx) {
             fz_register_document_handlers(ctx);
-            doc = fz_open_document(ctx, path.string().c_str());
+            doc = openAnyDocU8(ctx, path);
             if (doc != nullptr && fz_needs_password(ctx, doc)) {
                 encrypted = true;
                 if (password.empty()) {
@@ -3812,7 +3902,7 @@ public:
         info.encrypted = encrypted;
         fz_try(ctx) { info.pageCount = fz_count_pages(ctx, doc); }
         fz_catch(ctx) { info.pageCount = 0; }
-        info.title = path.filename().string();
+        info.title = fsUtf8(path.filename());
         info.backendName = "mupdf";
         document->setInfo(info);
         return std::shared_ptr<IPdfDocument>(document);
@@ -3834,7 +3924,7 @@ public:
             fz_document* doc = nullptr;
             char msg[512] = {0};
             bool failed = false;
-            fz_try(ctx) { doc = fz_open_document(ctx, input.string().c_str()); }
+            fz_try(ctx) { doc = openAnyDocU8(ctx, input); }
             fz_catch(ctx) {
                 std::snprintf(msg, sizeof(msg), "%s", fz_caught_message(ctx));
                 failed = true;
@@ -3849,7 +3939,7 @@ public:
             fz_drop_document(ctx, doc);
             if (failed) return Status::error(ErrorCode::IoError, msg);
 
-            std::string stem = input.stem().string();
+            std::string stem = fsUtf8(input.stem());
             for (int start = 0; start < total; start += pagesPerFile) {
                 int count = std::min(pagesPerFile, total - start);
                 fs::path out = outDir / (stem + "_p" + std::to_string(start + 1) + "-" +
@@ -3884,7 +3974,7 @@ public:
                           const std::string& password) override {
         std::error_code ec;
         if (!fs::exists(image, ec)) {
-            return Status::error(ErrorCode::InvalidArgument, "水印图片不存在: " + image.string());
+            return Status::error(ErrorCode::InvalidArgument, "水印图片不存在: " + fsUtf8(image));
         }
         if (opacity < 0.0f) opacity = 0.0f;
         if (opacity > 1.0f) opacity = 1.0f;

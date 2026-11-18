@@ -59,6 +59,7 @@
 #include "SecurityDialog.h"
 #include "WatermarkDialog.h"
 #include "pdfword/page_selection.hpp"
+#include "pdfword/path_util.hpp"
 
 namespace {
 
@@ -444,7 +445,7 @@ void MainWindow::refreshBookmarkTree(const QString& path) {
     auto backend = converter_ != nullptr ? converter_->pdfBackend() : nullptr;
     if (backend == nullptr) return;
     const pw::Result<std::vector<pw::OutlineItem>> res =
-        backend->outline(std::filesystem::path(path.toStdString()), std::string());
+        backend->outline(pw::fsPath(path.toUtf8().toStdString()), std::string());
     if (!res.ok()) {
         appendLog(QStringLiteral("读取书签失败: ") + QString::fromStdString(res.status().message()));
         return;
@@ -751,8 +752,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
             spec.rect = area;
             spec.opacity = action == InlineHighlight ? 0.55 : 1.0;
             std::vector<pw::AnnotSpec> specs{spec};
-            st = backend->annotate(std::filesystem::path(source.toStdString()),
-                                   std::filesystem::path(target.toStdString()), specs);
+            st = backend->annotate(pw::fsPath(source.toUtf8().toStdString()),
+                                   pw::fsPath(target.toUtf8().toStdString()), specs);
             break;
         }
         case InlineInk: {
@@ -770,8 +771,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
             }
             spec.inkPaths.push_back(pts);
             std::vector<pw::AnnotSpec> specs{spec};
-            st = backend->annotate(std::filesystem::path(source.toStdString()),
-                                   std::filesystem::path(target.toStdString()), specs);
+            st = backend->annotate(pw::fsPath(source.toUtf8().toStdString()),
+                                   pw::fsPath(target.toUtf8().toStdString()), specs);
             break;
         }
         case InlineFreeText:
@@ -789,8 +790,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
             spec.rect = area;
             spec.text = body.toStdString();
             std::vector<pw::AnnotSpec> specs{spec};
-            st = backend->annotate(std::filesystem::path(source.toStdString()),
-                                   std::filesystem::path(target.toStdString()), specs);
+            st = backend->annotate(pw::fsPath(source.toUtf8().toStdString()),
+                                   pw::fsPath(target.toUtf8().toStdString()), specs);
             break;
         }
         case InlineLink: {
@@ -806,15 +807,15 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
             spec.page = page - 1;
             spec.rect = area;
             spec.uri = uri.trimmed().toStdString();
-            st = backend->addLink(std::filesystem::path(source.toStdString()),
-                                  std::filesystem::path(target.toStdString()), spec);
+            st = backend->addLink(pw::fsPath(source.toUtf8().toStdString()),
+                                  pw::fsPath(target.toUtf8().toStdString()), spec);
             break;
         }
         case InlineReplaceText:
         case InlineDeleteText: {
             // 先把框里的原文读出来（core 的 textInRect），省得用户照着页面手打
             QString oldText;
-            auto got = backend->textInRect(std::filesystem::path(source.toStdString()), page - 1, area);
+            auto got = backend->textInRect(pw::fsPath(source.toUtf8().toStdString()), page - 1, area);
             if (got.ok()) oldText = QString::fromStdString(got.value());
             oldText.replace('\n', ' ').replace('\r', ' ').replace(QStringLiteral("  "), QStringLiteral(" "));
             oldText = oldText.trimmed();
@@ -845,8 +846,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
             opts.deleteOnly = action == InlineDeleteText;
             // 按矩形写回，不整篇搜 oldText：同一句在文档里出现多次时，全篇替换会把别处一起改掉；
             // textInRect 取出来的文本带换行时也可能根本搜不到（原来的"改了没反应"就是这个）。
-            st = backend->replaceTextAt(std::filesystem::path(source.toStdString()),
-                                        std::filesystem::path(target.toStdString()), page - 1, area,
+            st = backend->replaceTextAt(pw::fsPath(source.toUtf8().toStdString()),
+                                        pw::fsPath(target.toUtf8().toStdString()), page - 1, area,
                                         newText.toStdString(), opts);
             break;
         }
@@ -861,8 +862,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
                 break;
             }
             pw::ReplaceOptions opts;
-            st = backend->addTextAt(std::filesystem::path(source.toStdString()),
-                                    std::filesystem::path(target.toStdString()), page - 1, area,
+            st = backend->addTextAt(pw::fsPath(source.toUtf8().toStdString()),
+                                    pw::fsPath(target.toUtf8().toStdString()), page - 1, area,
                                     body.toStdString(), opts);
             break;
         }
@@ -874,9 +875,9 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
                 ran = false;
                 break;
             }
-            st = backend->replaceImage(std::filesystem::path(source.toStdString()),
-                                       std::filesystem::path(target.toStdString()), page - 1, area,
-                                       std::filesystem::path(img.toStdString()));
+            st = backend->replaceImage(pw::fsPath(source.toUtf8().toStdString()),
+                                       pw::fsPath(target.toUtf8().toStdString()), page - 1, area,
+                                       pw::fsPath(img.toUtf8().toStdString()));
             break;
         }
         default:
@@ -953,11 +954,11 @@ QString MainWindow::runPreviewTextEdit(int page, const QRectF& rect, const QStri
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     pw::Status st = backdrop
-                        ? backend->replaceTextAt(std::filesystem::path(source.toStdString()),
-                                                 std::filesystem::path(target.toStdString()),
+                        ? backend->replaceTextAt(pw::fsPath(source.toUtf8().toStdString()),
+                                                 pw::fsPath(target.toUtf8().toStdString()),
                                                  page - 1, area, text.toStdString(), opts)
-                        : backend->addTextAt(std::filesystem::path(source.toStdString()),
-                                             std::filesystem::path(target.toStdString()), page - 1,
+                        : backend->addTextAt(pw::fsPath(source.toUtf8().toStdString()),
+                                             pw::fsPath(target.toUtf8().toStdString()), page - 1,
                                              area, text.toStdString(), opts);
     QApplication::restoreOverrideCursor();
 
@@ -1547,8 +1548,8 @@ void MainWindow::renameSelectedFile() {
     }
 
     std::error_code ec;
-    std::filesystem::rename(std::filesystem::path(oldPath.toStdString()),
-                            std::filesystem::path(newPath.toStdString()), ec);
+    std::filesystem::rename(pw::fsPath(oldPath.toUtf8().toStdString()),
+                            pw::fsPath(newPath.toUtf8().toStdString()), ec);
     if (ec) {
         QMessageBox::warning(this, QStringLiteral("重命名失败"),
                              QStringLiteral("系统返回：%1\n（文件可能正被其他程序占用）")
@@ -1618,9 +1619,9 @@ void MainWindow::startConversion() {
         if (!outDir.isEmpty()) {
             const std::filesystem::path src(f.toStdString());
             const std::string stem = src.stem().string();
-            out = std::filesystem::path(outDir.toStdString()) / (stem + "." + target.toStdString());
+            out = pw::fsPath(outDir.toUtf8().toStdString()) / (stem + "." + target.toStdString());
         }
-        int id = jobs_->enqueue(std::filesystem::path(f.toStdString()), out, target.toStdString(),
+        int id = jobs_->enqueue(pw::fsPath(f.toUtf8().toStdString()), out, target.toStdString(),
                                 password.toStdString());
         appendLog(QStringLiteral("任务 #%1 已提交: %2 -> %3").arg(id).arg(f, target));
     }
@@ -1666,7 +1667,7 @@ void MainWindow::mergePdfs() {
     for (const auto& f : files) inputs.emplace_back(f.toStdString());
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    pw::Status st = converter_->pdfBackend()->merge(inputs, std::filesystem::path(dlg.outputPath().toStdString()));
+    pw::Status st = converter_->pdfBackend()->merge(inputs, pw::fsPath(dlg.outputPath().toUtf8().toStdString()));
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {

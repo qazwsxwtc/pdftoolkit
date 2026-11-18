@@ -13,6 +13,7 @@
 #include "pdfword/page_selection.hpp"
 
 #include <filesystem>
+#include "pdfword/path_util.hpp"
 
 ExtractDialog::ExtractDialog(std::shared_ptr<pw::IPdfBackend> backend, const QStringList& candidates,
                              const QString& current, QWidget* parent)
@@ -102,7 +103,7 @@ void ExtractDialog::reloadPageCount() {
         specValid_ = false;
         return;
     }
-    auto opened = backend_->open(std::filesystem::path(path.toStdString()), std::string());
+    auto opened = backend_->open(pw::fsPath(path.toUtf8().toStdString()), std::string());
     if (!opened.ok()) {
         pages_.clear();
         hint_->setText(QStringLiteral("打不开该文件: ") + QString::fromStdString(opened.message()));

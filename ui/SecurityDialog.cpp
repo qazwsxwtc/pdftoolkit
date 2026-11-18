@@ -15,6 +15,7 @@
 #include <QVBoxLayout>
 
 #include "DialogCommon.h"
+#include "pdfword/path_util.hpp"
 
 namespace {
 
@@ -102,8 +103,8 @@ void SecurityDialog::encryptPdf() {
     if (allowModify_->isChecked()) perms |= (1 << 8) | (1 << 10);
 
     const pw::Status st =
-        backend_->encrypt(std::filesystem::path(source_.toStdString()),
-                          std::filesystem::path(out.toStdString()), user.toStdString(),
+        backend_->encrypt(pw::fsPath(source_.toUtf8().toStdString()),
+                          pw::fsPath(out.toUtf8().toStdString()), user.toStdString(),
                           ownerPassword_->text().toStdString(), perms);
     if (!st.ok()) {
         QMessageBox::warning(this, QStringLiteral("加密失败"), QString::fromStdString(st.toString()));
@@ -125,8 +126,8 @@ void SecurityDialog::decryptPdf() {
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
-    const pw::Status st = backend_->decrypt(std::filesystem::path(source_.toStdString()),
-                                            std::filesystem::path(out.toStdString()),
+    const pw::Status st = backend_->decrypt(pw::fsPath(source_.toUtf8().toStdString()),
+                                            pw::fsPath(out.toUtf8().toStdString()),
                                             pwd.toStdString());
     if (!st.ok()) {
         QMessageBox::warning(this, QStringLiteral("解密失败"), QString::fromStdString(st.toString()));

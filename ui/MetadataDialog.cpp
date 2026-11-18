@@ -14,6 +14,7 @@
 #include <QVBoxLayout>
 
 #include "DialogCommon.h"
+#include "pdfword/path_util.hpp"
 
 MetadataDialog::MetadataDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                                QWidget* parent)
@@ -61,7 +62,7 @@ MetadataDialog::MetadataDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
 }
 
 void MetadataDialog::loadFromFile() {
-    auto meta = backend_->metadata(std::filesystem::path(source_.toStdString()), std::string());
+    auto meta = backend_->metadata(pw::fsPath(source_.toUtf8().toStdString()), std::string());
     if (!meta.ok()) {
         emit logMessage(QStringLiteral("读取元数据失败: ") + QString::fromStdString(meta.status().toString()));
         return;
@@ -84,8 +85,8 @@ void MetadataDialog::saveAs() {
     meta.subject = subject_->text().toStdString();
     meta.keywords = keywords_->text().toStdString();
 
-    const pw::Status st = backend_->setMetadata(std::filesystem::path(source_.toStdString()),
-                                                std::filesystem::path(out.toStdString()), meta);
+    const pw::Status st = backend_->setMetadata(pw::fsPath(source_.toUtf8().toStdString()),
+                                                pw::fsPath(out.toUtf8().toStdString()), meta);
     if (!st.ok()) {
         QMessageBox::warning(this, QStringLiteral("写入失败"), QString::fromStdString(st.toString()));
         return;

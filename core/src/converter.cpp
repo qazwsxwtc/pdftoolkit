@@ -8,13 +8,14 @@
 
 #include "pdfword/docx_writer.hpp"
 #include "pdfword/ocr.hpp"
+#include "pdfword/path_util.hpp"
 
 namespace pw {
 
 namespace {
 
 std::string extOf(const fs::path& p) {
-    std::string e = p.extension().string();
+    std::string e = fsUtf8(p.extension());
     if (!e.empty() && e[0] == '.') e.erase(0, 1);
     std::transform(e.begin(), e.end(), e.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -52,10 +53,10 @@ std::string trim(const std::string& s) {
 fs::path resolveOutput(const fs::path& source, const fs::path& requested, const std::string& targetExt) {
     std::error_code ec;
     if (requested.empty()) {
-        return source.parent_path() / (source.stem().string() + "." + targetExt);
+        return source.parent_path() / (fsUtf8(source.stem()) + "." + targetExt);
     }
     if (fs::is_directory(requested, ec)) {
-        return requested / (source.stem().string() + "." + targetExt);
+        return requested / (fsUtf8(source.stem()) + "." + targetExt);
     }
     fs::path out = requested;
     if (extOf(out) != targetExt) out.replace_extension(targetExt);
@@ -82,7 +83,7 @@ Status moveFile(const fs::path& from, const fs::path& to) {
     fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
     if (ec) {
         return Status::error(ErrorCode::IoError,
-                             "无法写入目标文件: " + to.string() + " (" + ec.message() + ")");
+                             "无法写入目标文件: " + fsUtf8(to) + " (" + ec.message() + ")");
     }
     fs::remove(from, ec);
     return Status::success();
@@ -101,21 +102,21 @@ Converter::Converter(Config config)
 Status Converter::toPdf(const fs::path& source, const ConvertOptions& options, fs::path* produced) {
     std::error_code ec;
     if (!fs::exists(source, ec)) {
-        return Status::error(ErrorCode::IoError, "源文件不存在: " + source.string());
+        return Status::error(ErrorCode::IoError, "源文件不存在: " + fsUtf8(source));
     }
     if (extOf(source) == "pdf") {
-        return Status::error(ErrorCode::InvalidArgument, "源文件已经是 PDF: " + source.string());
+        return Status::error(ErrorCode::InvalidArgument, "源文件已经是 PDF: " + fsUtf8(source));
     }
     if (!office_.available()) {
         return Status::error(ErrorCode::BackendMissing,
-                             "LibreOffice 未配置，无法把 " + extOf(source) +
-                                 " 转成 PDF（在 pdfword.ini 里填 libre_office=便携目录）");
+                             "LibreOffice 未配置，无法把 " + extOf(source) + " 转成 PDF" +
+                                 libreOfficeSetupHint(config_));
     }
 
     const fs::path target = resolveOutput(source, options.output, "pdf");
     const fs::path tempDir = makeTempOutDir(config_);
 
-    report(options, 5, "启动 LibreOffice headless: " + source.filename().string());
+    report(options, 5, "启动 LibreOffice headless: " + fsUtf8(source.filename()));
 
     fs::path loOutput;
     LogFn innerLog = options.log;
@@ -126,37 +127,38 @@ Status Converter::toPdf(const fs::path& source, const ConvertOptions& options, f
         return st;
     }
 
-    report(options, 90, "移动产物 -> " + target.string());
+    report(options, 90, "移动产物 -> " + fsUtf8(target));
     st = moveFile(loOutput, target);
     fs::remove_all(tempDir, ec);
     if (!st.ok()) return st;
 
     if (produced != nullptr) *produced = target;
-    report(options, 100, "PDF 生成完成: " + target.string());
+    report(options, 100, "PDF 生成完成: " + fsUtf8(target));
     return Status::success();
 }
 
 Status Converter::toDocx(const fs::path& source, const ConvertOptions& options, fs::path* produced) {
     std::error_code ec;
     if (!fs::exists(source, ec)) {
-        return Status::error(ErrorCode::IoError, "源文件不存在: " + source.string());
+        return Status::error(ErrorCode::IoError, "源文件不存在: " + fsUtf8(source));
     }
     std::string ext = extOf(source);
     if (ext == "pdf") {
         return pdfToDocx(source, options, produced);
     }
     if (ext == "docx") {
-        return Status::error(ErrorCode::InvalidArgument, "源文件已经是 DOCX: " + source.string());
+        return Status::error(ErrorCode::InvalidArgument, "源文件已经是 DOCX: " + fsUtf8(source));
     }
     if (!office_.available()) {
         return Status::error(ErrorCode::BackendMissing,
-                             "LibreOffice 未配置，无法把 " + ext + " 转成 DOCX");
+                             "LibreOffice 未配置，无法把 " + ext + " 转成 DOCX" +
+                                 libreOfficeSetupHint(config_));
     }
 
     const fs::path target = resolveOutput(source, options.output, "docx");
     const fs::path tempDir = makeTempOutDir(config_);
 
-    report(options, 5, "启动 LibreOffice headless: " + source.filename().string());
+    report(options, 5, "启动 LibreOffice headless: " + fsUtf8(source.filename()));
     fs::path loOutput;
     Status st = office_.convertOne(source, tempDir, OfficeRunner::filterForDocx(), &loOutput, options.log);
     if (!st.ok()) {
@@ -169,14 +171,14 @@ Status Converter::toDocx(const fs::path& source, const ConvertOptions& options, 
     if (!st.ok()) return st;
 
     if (produced != nullptr) *produced = target;
-    report(options, 100, "DOCX 生成完成: " + target.string());
+    report(options, 100, "DOCX 生成完成: " + fsUtf8(target));
     return Status::success();
 }
 
 Status Converter::pdfToDocx(const fs::path& source, const ConvertOptions& options, fs::path* produced) {
     std::error_code ec;
     if (!fs::exists(source, ec)) {
-        return Status::error(ErrorCode::IoError, "源文件不存在: " + source.string());
+        return Status::error(ErrorCode::IoError, "源文件不存在: " + fsUtf8(source));
     }
     if (extOf(source) != "pdf") {
         return Status::error(ErrorCode::InvalidArgument, "pdf -> docx 只接受 PDF 输入");
@@ -198,8 +200,8 @@ Status Converter::pdfToDocx(const fs::path& source, const ConvertOptions& option
     report(options, 0, "提取文字: " + std::to_string(pageCount) + " 页");
 
     DocxWriter writer;
-    writer.setTitle(source.stem().string());
-    writer.addParagraph(source.stem().string(), 1);
+    writer.setTitle(fsUtf8(source.stem()));
+    writer.addParagraph(fsUtf8(source.stem()), 1);
 
     for (int i = 0; i < pageCount; ++i) {
         std::string text;
@@ -225,7 +227,7 @@ Status Converter::pdfToDocx(const fs::path& source, const ConvertOptions& option
     if (!st.ok()) return st;
 
     if (produced != nullptr) *produced = target;
-    report(options, 100, "DOCX 生成完成（文字已重排，版式有损）: " + target.string());
+    report(options, 100, "DOCX 生成完成（文字已重排，版式有损）: " + fsUtf8(target));
     return Status::success();
 }
 
@@ -253,7 +255,7 @@ std::string Converter::capabilityReport() const {
         oss << "LibreOffice 版本: "
             << (cached.empty() ? std::string("未检测（第一次转换时自动获取）") : cached) << "\n";
     }
-    oss << "工作目录: " << config_.workDir.string() << "\n";
+    oss << "工作目录: " << fsUtf8(config_.workDir) << "\n";
     return oss.str();
 }
 

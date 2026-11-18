@@ -1,6 +1,7 @@
 #include "pdfword/job.hpp"
 
 #include <utility>
+#include "pdfword/path_util.hpp"
 
 namespace pw {
 
@@ -173,7 +174,7 @@ void JobQueue::workerLoop() {
                 if (st.ok()) {
                     it->second.state = JobState::Done;
                     it->second.progress = 100;
-                    it->second.message = "完成: " + produced.string();
+                    it->second.message = "完成: " + fsUtf8(produced);
                 } else {
                     it->second.state = JobState::Failed;
                     it->second.message = st.toString();

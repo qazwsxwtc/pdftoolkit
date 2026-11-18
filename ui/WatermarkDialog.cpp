@@ -20,6 +20,7 @@
 #include <QVBoxLayout>
 
 #include "DialogCommon.h"
+#include "pdfword/path_util.hpp"
 
 WatermarkDialog::WatermarkDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                                  QWidget* parent)
@@ -162,8 +163,8 @@ void WatermarkDialog::addWatermark() {
 
         QApplication::setOverrideCursor(Qt::WaitCursor);
         const pw::Status st = backend_->imageWatermark(
-            std::filesystem::path(source_.toStdString()), std::filesystem::path(out.toStdString()),
-            std::filesystem::path(imagePath.toStdString()),
+            pw::fsPath(source_.toUtf8().toStdString()), pw::fsPath(out.toUtf8().toStdString()),
+            pw::fsPath(imagePath.toUtf8().toStdString()),
             static_cast<float>(opacity_->value()), static_cast<float>(imageScale_->value()),
             tile_->isChecked());
         QApplication::restoreOverrideCursor();
@@ -191,7 +192,7 @@ void WatermarkDialog::addWatermark() {
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const pw::Status st = backend_->watermark(
-        std::filesystem::path(source_.toStdString()), std::filesystem::path(out.toStdString()),
+        pw::fsPath(source_.toUtf8().toStdString()), pw::fsPath(out.toUtf8().toStdString()),
         text.toStdString(), static_cast<float>(opacity_->value()),
         position_->currentData().toString().toStdString());
     QApplication::restoreOverrideCursor();

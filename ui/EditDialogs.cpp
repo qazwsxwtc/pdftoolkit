@@ -35,6 +35,7 @@
 
 #include "DialogCommon.h"
 #include "PdfViewWidget.h"
+#include "pdfword/path_util.hpp"
 
 namespace {
 
@@ -301,8 +302,8 @@ void AnnotDialog::apply() {
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     std::vector<pw::AnnotSpec> specs{spec};
-    const pw::Status st = backend_->annotate(std::filesystem::path(source_.toStdString()),
-                                             std::filesystem::path(out.toStdString()), specs);
+    const pw::Status st = backend_->annotate(pw::fsPath(source_.toUtf8().toStdString()),
+                                             pw::fsPath(out.toUtf8().toStdString()), specs);
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {
@@ -418,8 +419,8 @@ void LinkDialog::apply() {
     if (out.isEmpty()) return;
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const pw::Status st = backend_->addLink(std::filesystem::path(source_.toStdString()),
-                                            std::filesystem::path(out.toStdString()), spec);
+    const pw::Status st = backend_->addLink(pw::fsPath(source_.toUtf8().toStdString()),
+                                            pw::fsPath(out.toUtf8().toStdString()), spec);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
         QMessageBox::warning(this, QStringLiteral("加链接失败"),
@@ -514,7 +515,7 @@ void FindReplaceDialog::previewFind() {
         return;
     }
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    auto hits = backend_->findText(std::filesystem::path(source_.toStdString()), needle.toStdString());
+    auto hits = backend_->findText(pw::fsPath(source_.toUtf8().toStdString()), needle.toStdString());
     QApplication::restoreOverrideCursor();
     if (!hits.ok()) {
         result_->setText(QStringLiteral("查找失败：%1").arg(QString::fromStdString(hits.status().toString())));
@@ -560,7 +561,7 @@ void FindReplaceDialog::applyReplace() {
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const pw::Status st = backend_->replaceText(
-        std::filesystem::path(source_.toStdString()), std::filesystem::path(out.toStdString()),
+        pw::fsPath(source_.toUtf8().toStdString()), pw::fsPath(out.toUtf8().toStdString()),
         needle.toStdString(), replacement.toStdString(), opts);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
@@ -684,8 +685,8 @@ void ReplaceImageDialog::apply() {
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const pw::Status st = backend_->replaceImage(
-        std::filesystem::path(source_.toStdString()), std::filesystem::path(out.toStdString()),
-        page_->value() - 1, rect, std::filesystem::path(imagePath.toStdString()));
+        pw::fsPath(source_.toUtf8().toStdString()), pw::fsPath(out.toUtf8().toStdString()),
+        page_->value() - 1, rect, pw::fsPath(imagePath.toUtf8().toStdString()));
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
         QMessageBox::warning(this, QStringLiteral("替换图片失败"),
@@ -841,7 +842,7 @@ FormDialog::FormDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& 
 
 void FormDialog::reloadFields() {
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    auto fields = backend_->formFields(std::filesystem::path(source_.toStdString()));
+    auto fields = backend_->formFields(pw::fsPath(source_.toUtf8().toStdString()));
     QApplication::restoreOverrideCursor();
     if (!fields.ok()) {
         fillHint_->setText(QStringLiteral("读取失败：%1").arg(QString::fromStdString(fields.status().toString())));
@@ -910,8 +911,8 @@ void FormDialog::fillForm() {
     if (out.isEmpty()) return;
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const pw::Status st = backend_->fillForm(std::filesystem::path(source_.toStdString()),
-                                             std::filesystem::path(out.toStdString()), values);
+    const pw::Status st = backend_->fillForm(pw::fsPath(source_.toUtf8().toStdString()),
+                                             pw::fsPath(out.toUtf8().toStdString()), values);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
         QMessageBox::warning(this, QStringLiteral("填写失败"), QString::fromStdString(st.toString()));
@@ -994,8 +995,8 @@ void FormDialog::createForm() {
     }
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const pw::Status st = backend_->createForm(std::filesystem::path(source_.toStdString()),
-                                               std::filesystem::path(out.toStdString()), specs);
+    const pw::Status st = backend_->createForm(pw::fsPath(source_.toUtf8().toStdString()),
+                                               pw::fsPath(out.toUtf8().toStdString()), specs);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
         QMessageBox::warning(this, QStringLiteral("生成表单失败"),

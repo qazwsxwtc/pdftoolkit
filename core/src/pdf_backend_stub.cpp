@@ -1,4 +1,5 @@
 #include "pdfword/pdf_backend.hpp"
+#include "pdfword/path_util.hpp"
 
 namespace pw {
 
@@ -10,7 +11,7 @@ class StubDocument : public IPdfDocument {
 public:
     explicit StubDocument(const fs::path& path) {
         info_.backendName = "stub";
-        info_.title = path.filename().string();
+        info_.title = fsUtf8(path.filename());
     }
     const DocumentInfo& info() const override { return info_; }
     Status pageInfo(int, PageInfo*) const override {
@@ -37,7 +38,7 @@ public:
 
     Result<std::shared_ptr<IPdfDocument>> open(const fs::path& path,
                                                const std::string& /*password*/) override {
-        return Status::error(ErrorCode::BackendMissing, unavailableReason() + "；open=" + path.string());
+        return Status::error(ErrorCode::BackendMissing, unavailableReason() + "；open=" + fsUtf8(path));
     }
     Status merge(const std::vector<fs::path>&, const fs::path&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());
