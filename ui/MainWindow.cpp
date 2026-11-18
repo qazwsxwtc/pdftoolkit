@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "I18nUi.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -89,7 +90,7 @@ void showMessageBox(QWidget* parent, const QString& title, const QString& text) 
 // 书签标题 / 页码一次改完的小窗；pageCount 决定页码上限，0 表示"没有跳转目标"
 bool editOutlineItem(QWidget* parent, QString* title, int* page, int pageCount) {
     QDialog dlg(parent);
-    dlg.setWindowTitle(QStringLiteral("修改书签"));
+    dlg.setWindowTitle(TR("修改书签"));
     auto* layout = new QVBoxLayout(&dlg);
 
     auto* form = new QFormLayout();
@@ -101,14 +102,14 @@ bool editOutlineItem(QWidget* parent, QString* title, int* page, int pageCount) 
     pageSpin->setRange(0, qMax(1, pageCount));
     pageSpin->setValue(qBound(0, *page, qMax(1, pageCount)));
     // 0 号位显示成"没有跳转目标"，而不是孤零零的 0
-    pageSpin->setSpecialValueText(QStringLiteral("没有跳转目标"));
-    form->addRow(QStringLiteral("标题"), titleEdit);
-    form->addRow(QStringLiteral("跳到第几页"), pageSpin);
+    pageSpin->setSpecialValueText(TR("没有跳转目标"));
+    form->addRow(TR("标题"), titleEdit);
+    form->addRow(TR("跳到第几页"), pageSpin);
     layout->addLayout(form);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
-    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    buttons->button(QDialogButtonBox::Ok)->setText(TR("确定"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(TR("取消"));
     layout->addWidget(buttons);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -140,19 +141,19 @@ enum InlineAction {
 
 QString inlineActionName(int action) {
     switch (action) {
-        case InlineHighlight: return QStringLiteral("高亮");
-        case InlineUnderline: return QStringLiteral("下划线");
-        case InlineStrikeOut: return QStringLiteral("删除线");
-        case InlineSquiggly: return QStringLiteral("波浪线");
-        case InlineInk: return QStringLiteral("手绘标记");
-        case InlineFreeText: return QStringLiteral("文本框");
-        case InlineNote: return QStringLiteral("便签");
-        case InlineLink: return QStringLiteral("超链接");
-        case InlineReplaceText: return QStringLiteral("改这里的文字");
-        case InlineDeleteText: return QStringLiteral("删掉这里的文字");
-        case InlineReplaceImage: return QStringLiteral("换这里的图片");
-        case InlineAddText: return QStringLiteral("在框里加文字");
-        default: return QStringLiteral("编辑");
+        case InlineHighlight: return TR("高亮");
+        case InlineUnderline: return TR("下划线");
+        case InlineStrikeOut: return TR("删除线");
+        case InlineSquiggly: return TR("波浪线");
+        case InlineInk: return TR("手绘标记");
+        case InlineFreeText: return TR("文本框");
+        case InlineNote: return TR("便签");
+        case InlineLink: return TR("超链接");
+        case InlineReplaceText: return TR("改这里的文字");
+        case InlineDeleteText: return TR("删掉这里的文字");
+        case InlineReplaceImage: return TR("换这里的图片");
+        case InlineAddText: return TR("在框里加文字");
+        default: return TR("编辑");
     }
 }
 
@@ -161,7 +162,7 @@ QString inlineActionName(int action) {
 MainWindow::MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr<pw::JobQueue> jobs,
                        QWidget* parent)
     : QMainWindow(parent), converter_(std::move(converter)), jobs_(std::move(jobs)) {
-    setWindowTitle(QStringLiteral("Pdf-Toolkit — PDF/Word 转换与预览"));
+    setWindowTitle(TR("Pdf-Toolkit — PDF/Word 转换与预览"));
     setWindowIcon(appIcon());
     // 允许把文件从资源管理器拖到窗口任意位置
     setAcceptDrops(true);
@@ -233,7 +234,7 @@ void MainWindow::createCentral() {
     statusBar()->setMinimumHeight(30);
     statusLabel_ = new QLabel(this);
     statusLabel_->setObjectName(QStringLiteral("backendState"));
-    statusLabel_->setText(QStringLiteral("PDF 后端: 检测中…"));
+    statusLabel_->setText(TR("PDF 后端: 检测中…"));
     statusBar()->addWidget(statusLabel_, 1);
     if (QWidget* nav = viewer_->navBar()) {
         // 不给 stretch：只按自身宽度排在进度条左边，左边剩下的是状态文字
@@ -250,7 +251,7 @@ void MainWindow::createCentral() {
 
 void MainWindow::createFileDock() {
     // 待处理文件放独立面板：可停靠左/右、可拖出来当浮动窗口
-    fileDock_ = new QDockWidget(QStringLiteral("待处理文件"), this);
+    fileDock_ = new QDockWidget(TR("待处理文件"), this);
     fileDock_->setObjectName(QStringLiteral("fileDock"));
     fileDock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     fileDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
@@ -260,7 +261,7 @@ void MainWindow::createFileDock() {
     auto* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(6, 6, 6, 6);
 
-    auto* hint = new QLabel(QStringLiteral("双击 PDF 可预览；可直接把文件拖到这里"), panel);
+    auto* hint = new QLabel(TR("双击 PDF 可预览；可直接把文件拖到这里"), panel);
     hint->setStyleSheet(QStringLiteral("color:#666;"));
     layout->addWidget(hint);
 
@@ -278,8 +279,8 @@ void MainWindow::createFileDock() {
     });
 
     auto* row = new QHBoxLayout();
-    auto* addBtn = new QPushButton(QStringLiteral("添加文件"), panel);
-    auto* removeBtn = new QPushButton(QStringLiteral("移除选中"), panel);
+    auto* addBtn = new QPushButton(TR("添加文件"), panel);
+    auto* removeBtn = new QPushButton(TR("移除选中"), panel);
     row->addWidget(addBtn);
     row->addWidget(removeBtn);
     layout->addLayout(row);
@@ -293,7 +294,7 @@ void MainWindow::createFileDock() {
 
 void MainWindow::createBookmarkDock() {
     // 书签和"目录"在 PDF 里是同一棵 /Outlines 树，所以只做一个面板
-    bookmarkDock_ = new QDockWidget(QStringLiteral("书签 / 目录"), this);
+    bookmarkDock_ = new QDockWidget(TR("书签 / 目录"), this);
     bookmarkDock_->setObjectName(QStringLiteral("bookmarkDock"));
     bookmarkDock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     bookmarkDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
@@ -303,7 +304,7 @@ void MainWindow::createBookmarkDock() {
     auto* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(6, 6, 6, 6);
 
-    auto* hint = new QLabel(QStringLiteral("双击条目跳到对应页；改完点「应用」另存为 _书签.pdf"), panel);
+    auto* hint = new QLabel(TR("双击条目跳到对应页；改完点「应用」另存为 _书签.pdf"), panel);
     hint->setObjectName(QStringLiteral("bookmarkHint"));
     hint->setStyleSheet(QStringLiteral("color:#666;"));
     hint->setWordWrap(true);
@@ -312,7 +313,7 @@ void MainWindow::createBookmarkDock() {
     bookmarkTree_ = new QTreeWidget(panel);
     bookmarkTree_->setObjectName(QStringLiteral("bookmarkTree"));
     bookmarkTree_->setColumnCount(2);
-    bookmarkTree_->setHeaderLabels({QStringLiteral("标题"), QStringLiteral("页")});
+    bookmarkTree_->setHeaderLabels({TR("标题"), TR("页")});
     // 标题列吃掉剩余宽度、页码列按内容收窄：长标题不会被截断，页码列也不占地方。
     // 必须先关掉 header 的 stretchLastSection，否则最后一列会把剩余宽度全吃掉。
     bookmarkTree_->header()->setStretchLastSection(false);
@@ -325,26 +326,26 @@ void MainWindow::createBookmarkDock() {
 
     // 两行按钮：先增删改，再排序 / 落盘
     auto* row1 = new QHBoxLayout();
-    auto* addSiblingBtn = new QPushButton(QStringLiteral("新增同级"), panel);
+    auto* addSiblingBtn = new QPushButton(TR("新增同级"), panel);
     addSiblingBtn->setObjectName(QStringLiteral("bookmarkAddSibling"));
-    addSiblingBtn->setToolTip(QStringLiteral("在当前书签的同一层插入一条新书签"));
-    auto* addChildBtn = new QPushButton(QStringLiteral("新增子级"), panel);
+    addSiblingBtn->setToolTip(TR("在当前书签的同一层插入一条新书签"));
+    auto* addChildBtn = new QPushButton(TR("新增子级"), panel);
     addChildBtn->setObjectName(QStringLiteral("bookmarkAddChild"));
-    addChildBtn->setToolTip(QStringLiteral("在当前书签下面插入一条下一层书签"));
-    auto* editBtn = new QPushButton(QStringLiteral("修改"), panel);
+    addChildBtn->setToolTip(TR("在当前书签下面插入一条下一层书签"));
+    auto* editBtn = new QPushButton(TR("修改"), panel);
     editBtn->setObjectName(QStringLiteral("bookmarkEdit"));
-    editBtn->setToolTip(QStringLiteral("改标题和跳转页码"));
+    editBtn->setToolTip(TR("改标题和跳转页码"));
     row1->addWidget(addSiblingBtn);
     row1->addWidget(addChildBtn);
     row1->addWidget(editBtn);
     layout->addLayout(row1);
 
     auto* row2 = new QHBoxLayout();
-    auto* removeBtn = new QPushButton(QStringLiteral("删除"), panel);
+    auto* removeBtn = new QPushButton(TR("删除"), panel);
     removeBtn->setObjectName(QStringLiteral("bookmarkRemove"));
-    auto* upBtn = new QPushButton(QStringLiteral("上移"), panel);
+    auto* upBtn = new QPushButton(TR("上移"), panel);
     upBtn->setObjectName(QStringLiteral("bookmarkUp"));
-    auto* downBtn = new QPushButton(QStringLiteral("下移"), panel);
+    auto* downBtn = new QPushButton(TR("下移"), panel);
     downBtn->setObjectName(QStringLiteral("bookmarkDown"));
     row2->addWidget(removeBtn);
     row2->addWidget(upBtn);
@@ -352,12 +353,12 @@ void MainWindow::createBookmarkDock() {
     layout->addLayout(row2);
 
     auto* row3 = new QHBoxLayout();
-    auto* applyBtn = new QPushButton(QStringLiteral("应用"), panel);
+    auto* applyBtn = new QPushButton(TR("应用"), panel);
     applyBtn->setObjectName(QStringLiteral("bookmarkApply"));
-    applyBtn->setToolTip(QStringLiteral("把当前这棵树写进文档，另存为 <原名>_书签.pdf"));
-    auto* exportBtn = new QPushButton(QStringLiteral("导出…"), panel);
+    applyBtn->setToolTip(TR("把当前这棵树写进文档，另存为 <原名>_书签.pdf"));
+    auto* exportBtn = new QPushButton(TR("导出…"), panel);
     exportBtn->setObjectName(QStringLiteral("bookmarkExport"));
-    exportBtn->setToolTip(QStringLiteral("把书签导出成文本或 JSON"));
+    exportBtn->setToolTip(TR("把书签导出成文本或 JSON"));
     row3->addWidget(applyBtn);
     row3->addWidget(exportBtn);
     layout->addLayout(row3);
@@ -403,8 +404,8 @@ void MainWindow::rebuildBookmarkTree(const std::vector<pw::OutlineItem>& items) 
         item->setText(1, src.page > 0 ? QString::number(src.page) : QString());
         // 面板窄的时候标题会被省略号截掉，悬停能看到全文
         item->setToolTip(0, title);
-        item->setToolTip(1, src.page > 0 ? QStringLiteral("跳到第 %1 页").arg(src.page)
-                                         : QStringLiteral("没有跳转目标"));
+        item->setToolTip(1, src.page > 0 ? TR("跳到第 %1 页").arg(src.page)
+                                         : TR("没有跳转目标"));
         item->setData(0, Qt::UserRole, src.page);
 
         int level = src.level < 0 ? 0 : src.level;
@@ -447,17 +448,17 @@ void MainWindow::refreshBookmarkTree(const QString& path) {
     const pw::Result<std::vector<pw::OutlineItem>> res =
         backend->outline(pw::fsPath(path.toUtf8().toStdString()), std::string());
     if (!res.ok()) {
-        appendLog(QStringLiteral("读取书签失败: ") + QString::fromStdString(res.status().message()));
+        appendLog(TR("读取书签失败: ") + QString::fromStdString(res.status().message()));
         return;
     }
     rebuildBookmarkTree(res.value());
-    appendLog(QStringLiteral("已读取书签: ") + QString::number(res.value().size()) + QStringLiteral(" 条"));
+    appendLog(TR("已读取书签: ") + QString::number(res.value().size()) + TR(" 条"));
 }
 
 void MainWindow::bookmarkAdd(bool asChild) {
     if (bookmarkTree_ == nullptr) return;
     if (bookmarkPath_.isEmpty()) {
-        appendLog(QStringLiteral("先在左边预览一个 PDF，再来编辑它的书签"));
+        appendLog(TR("先在左边预览一个 PDF，再来编辑它的书签"));
         return;
     }
 
@@ -466,7 +467,7 @@ void MainWindow::bookmarkAdd(bool asChild) {
     int page = current != nullptr ? current->data(0, Qt::UserRole).toInt() : 0;
     if (page <= 0 && viewer_ != nullptr) page = viewer_->currentPage();
 
-    QString title = asChild ? QStringLiteral("新的子书签") : QStringLiteral("新的书签");
+    QString title = asChild ? TR("新的子书签") : TR("新的书签");
     if (!editOutlineItem(this, &title, &page, pageCount)) return;
 
     auto* item = new QTreeWidgetItem();
@@ -492,14 +493,14 @@ void MainWindow::bookmarkAdd(bool asChild) {
         bookmarkTree_->addTopLevelItem(item);
     }
     bookmarkTree_->setCurrentItem(item);
-    appendLog(QStringLiteral("已新增书签: ") + title);
+    appendLog(TR("已新增书签: ") + title);
 }
 
 void MainWindow::bookmarkEdit() {
     if (bookmarkTree_ == nullptr) return;
     QTreeWidgetItem* item = bookmarkTree_->currentItem();
     if (item == nullptr) {
-        appendLog(QStringLiteral("先选中一条书签再改"));
+        appendLog(TR("先选中一条书签再改"));
         return;
     }
     const int pageCount = viewer_ != nullptr ? viewer_->pageCount() : 0;
@@ -509,15 +510,15 @@ void MainWindow::bookmarkEdit() {
     item->setText(0, title);
     item->setText(1, page > 0 ? QString::number(page) : QString());
     item->setData(0, Qt::UserRole, page);
-    appendLog(QStringLiteral("已修改书签: ") + title + QStringLiteral(" → 第 ") + QString::number(page) +
-              QStringLiteral(" 页"));
+    appendLog(TR("已修改书签: ") + title + TR(" → 第 ") + QString::number(page) +
+              TR(" 页"));
 }
 
 void MainWindow::bookmarkRemove() {
     if (bookmarkTree_ == nullptr) return;
     QTreeWidgetItem* item = bookmarkTree_->currentItem();
     if (item == nullptr) {
-        appendLog(QStringLiteral("先选中一条书签再删"));
+        appendLog(TR("先选中一条书签再删"));
         return;
     }
     const QString title = item->text(0);
@@ -527,7 +528,7 @@ void MainWindow::bookmarkRemove() {
     } else {
         delete bookmarkTree_->takeTopLevelItem(bookmarkTree_->indexOfTopLevelItem(item));
     }
-    appendLog(QStringLiteral("已删除书签: ") + title);
+    appendLog(TR("已删除书签: ") + title);
 }
 
 void MainWindow::bookmarkMove(int delta) {
@@ -553,7 +554,7 @@ void MainWindow::bookmarkMove(int delta) {
 
 void MainWindow::bookmarkApply() {
     if (bookmarkTree_ == nullptr || bookmarkPath_.isEmpty()) {
-        appendLog(QStringLiteral("先预览一个 PDF，再来写书签"));
+        appendLog(TR("先预览一个 PDF，再来写书签"));
         return;
     }
 
@@ -565,24 +566,24 @@ void MainWindow::bookmarkApply() {
 
     const std::filesystem::path input(bookmarkPath_.toStdString());
     const std::filesystem::path output =
-        input.parent_path() / (input.stem().string() + "_书签.pdf");
+        input.parent_path() / (input.stem().string() + pw::i18n::t("_书签.pdf"));
     const pw::Status st = backend->setOutline(input, output, items, std::string());
     if (!st.ok()) {
-        appendLog(QStringLiteral("写入书签失败: ") + QString::fromStdString(st.message()));
-        showMessageBox(this, QStringLiteral("写入书签失败"), QString::fromStdString(st.message()));
+        appendLog(TR("写入书签失败: ") + QString::fromStdString(st.message()));
+        showMessageBox(this, TR("写入书签失败"), QString::fromStdString(st.message()));
         return;
     }
     const QString outPath = QString::fromStdString(output.string());
-    appendLog(QStringLiteral("已写入 ") + QString::number(items.size()) + QStringLiteral(" 条书签 -> ") +
+    appendLog(TR("已写入 ") + QString::number(items.size()) + TR(" 条书签 -> ") +
               outPath);
-    showMessageBox(this, QStringLiteral("书签已写入"),
-                   QStringLiteral("已写入 %1 条书签：\n%2").arg(items.size()).arg(outPath));
+    showMessageBox(this, TR("书签已写入"),
+                   TR("已写入 %1 条书签：\n%2").arg(items.size()).arg(outPath));
 }
 
 void MainWindow::bookmarkExport() {
     if (bookmarkTree_ == nullptr) return;
     if (bookmarkTree_->topLevelItemCount() == 0) {
-        appendLog(QStringLiteral("当前文档没有书签可导出"));
+        appendLog(TR("当前文档没有书签可导出"));
         return;
     }
 
@@ -592,16 +593,16 @@ void MainWindow::bookmarkExport() {
     QString suggested;
     if (!bookmarkPath_.isEmpty()) {
         const std::filesystem::path input(bookmarkPath_.toStdString());
-        suggested = QString::fromStdString((input.parent_path() / (input.stem().string() + "_书签.txt")).string());
+        suggested = QString::fromStdString((input.parent_path() / (input.stem().string() + pw::i18n::t("_书签.txt"))).string());
     }
     const QString path = QFileDialog::getSaveFileName(
-        this, QStringLiteral("导出书签"), suggested,
-        QStringLiteral("文本 (*.txt);;JSON (*.json)"));
+        this, TR("导出书签"), suggested,
+        TR("文本 (*.txt);;JSON (*.json)"));
     if (path.isEmpty()) return;
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        appendLog(QStringLiteral("写不了: ") + path);
+        appendLog(TR("写不了: ") + path);
         return;
     }
     QTextStream out(&file);
@@ -624,7 +625,7 @@ void MainWindow::bookmarkExport() {
         }
     }
     file.close();
-    appendLog(QStringLiteral("已导出书签 -> ") + path);
+    appendLog(TR("已导出书签 -> ") + path);
 }
 
 void MainWindow::bookmarkActivated(QTreeWidgetItem* item, int column) {
@@ -643,7 +644,7 @@ void MainWindow::bookmarkActivated(QTreeWidgetItem* item, int column) {
 
 void MainWindow::showPreviewMenu(int page, const QPoint& globalPos) {
     if (viewer_ == nullptr || viewer_->currentPath().isEmpty()) {
-        appendLog(QStringLiteral("预览里还没有打开的 PDF，先双击一个 PDF 再改"));
+        appendLog(TR("预览里还没有打开的 PDF，先双击一个 PDF 再改"));
         return;
     }
 
@@ -654,23 +655,23 @@ void MainWindow::showPreviewMenu(int page, const QPoint& globalPos) {
         act->setData(action);
         return act;
     };
-    add(QStringLiteral("高亮（拖框）"), InlineHighlight);
-    add(QStringLiteral("下划线（拖框）"), InlineUnderline);
-    add(QStringLiteral("删除线（拖框）"), InlineStrikeOut);
-    add(QStringLiteral("波浪线（拖框）"), InlineSquiggly);
-    add(QStringLiteral("手绘标记（拖框）"), InlineInk);
+    add(TR("高亮（拖框）"), InlineHighlight);
+    add(TR("下划线（拖框）"), InlineUnderline);
+    add(TR("删除线（拖框）"), InlineStrikeOut);
+    add(TR("波浪线（拖框）"), InlineSquiggly);
+    add(TR("手绘标记（拖框）"), InlineInk);
     menu.addSeparator();
-    add(QStringLiteral("文本框注释…（拖框后写字）"), InlineFreeText);
-    add(QStringLiteral("便签…（拖框后写字）"), InlineNote);
-    add(QStringLiteral("超链接…（拖框后填网址）"), InlineLink);
+    add(TR("文本框注释…（拖框后写字）"), InlineFreeText);
+    add(TR("便签…（拖框后写字）"), InlineNote);
+    add(TR("超链接…（拖框后填网址）"), InlineLink);
     menu.addSeparator();
-    add(QStringLiteral("改这里的文字…（拖框自动带出原文）"), InlineReplaceText);
-    add(QStringLiteral("删掉这里的文字（拖框）"), InlineDeleteText);
-    add(QStringLiteral("在这里加文字…（拖框后打字）"), InlineAddText);
-    add(QStringLiteral("换这里的图片…（拖框后选图）"), InlineReplaceImage);
+    add(TR("改这里的文字…（拖框自动带出原文）"), InlineReplaceText);
+    add(TR("删掉这里的文字（拖框）"), InlineDeleteText);
+    add(TR("在这里加文字…（拖框后打字）"), InlineAddText);
+    add(TR("换这里的图片…（拖框后选图）"), InlineReplaceImage);
     menu.addSeparator();
-    add(QStringLiteral("在第 %1 页加书签").arg(page), InlineBookmark);
-    add(QStringLiteral("取消框选"), InlineCancel);
+    add(TR("在第 %1 页加书签").arg(page), InlineBookmark);
+    add(TR("取消框选"), InlineCancel);
 
     QAction* chosen = menu.exec(globalPos);
     if (chosen == nullptr) return;
@@ -679,7 +680,7 @@ void MainWindow::showPreviewMenu(int page, const QPoint& globalPos) {
     if (action == InlineCancel) {
         inlineAction_ = 0;
         viewer_->setSelectMode(false);
-        appendLog(QStringLiteral("已取消框选"));
+        appendLog(TR("已取消框选"));
         return;
     }
     if (action == InlineBookmark) {
@@ -693,7 +694,7 @@ void MainWindow::startInlineEdit(int action) {
     if (viewer_ == nullptr) return;
     inlineAction_ = action;
     viewer_->setSelectMode(true);
-    appendLog(QStringLiteral("「%1」：在第 %2 页（或其它页）上拖一个框，松手即写入；右键可取消")
+    appendLog(TR("「%1」：在第 %2 页（或其它页）上拖一个框，松手即写入；右键可取消")
                   .arg(inlineActionName(action))
                   .arg(viewer_->currentPage()));
 }
@@ -715,7 +716,7 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
     area.x1 = rect.right();
     area.y1 = rect.bottom();
     if (area.empty()) {
-        appendLog(QStringLiteral("框太小了，什么也没改"));
+        appendLog(TR("框太小了，什么也没改"));
         return;
     }
 
@@ -728,7 +729,7 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
     if (inPlace) {
         target = QDir(outInfo.absolutePath())
                      .filePath(outInfo.completeBaseName() +
-                               QStringLiteral("_编辑中_%1.pdf")
+                               TR("_编辑中_%1.pdf")
                                    .arg(QDateTime::currentMSecsSinceEpoch()));
     }
 
@@ -778,8 +779,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
         case InlineFreeText:
         case InlineNote: {
             const QString body = QInputDialog::getMultiLineText(
-                this, action == InlineFreeText ? QStringLiteral("文本框内容") : QStringLiteral("便签内容"),
-                QStringLiteral("写在这块区域里的文字："), QString());
+                this, action == InlineFreeText ? TR("文本框内容") : TR("便签内容"),
+                TR("写在这块区域里的文字："), QString());
             if (body.isEmpty()) {
                 ran = false;  // 取消
                 break;
@@ -796,8 +797,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
         }
         case InlineLink: {
             const QString uri = QInputDialog::getText(
-                this, QStringLiteral("超链接目标"),
-                QStringLiteral("网址（https://…）或者要跳到的页码（第3页）："), QLineEdit::Normal,
+                this, TR("超链接目标"),
+                TR("网址（https://…）或者要跳到的页码（第3页）："), QLineEdit::Normal,
                 QStringLiteral("https://"));
             if (uri.trimmed().isEmpty()) {
                 ran = false;
@@ -822,9 +823,9 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
             if (oldText.isEmpty()) {
                 ran = false;
                 QApplication::restoreOverrideCursor();
-                showMessageBox(this, QStringLiteral("框里没有文字"),
-                               QStringLiteral("这块区域取不到文字（可能是图片或扫描页）。"
-                                              "扫描页要先做 OCR；按整词替换可以用「查找替换…」。"));
+                showMessageBox(this, TR("框里没有文字"),
+                               TR("这块区域取不到文字（可能是图片或扫描页）。")
+                                   + TR("扫描页要先做 OCR；按整词替换可以用「查找替换…」。"));
                 return;
             }
             QString newText = oldText;
@@ -833,8 +834,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
                     newText = inlineTextForTest_;
                 } else {
                     newText = QInputDialog::getText(
-                        this, QStringLiteral("改这里的文字"),
-                        QStringLiteral("框里的原文已经带出来了（只改这一块，别处的同名文字不动）："),
+                        this, TR("改这里的文字"),
+                        TR("框里的原文已经带出来了（只改这一块，别处的同名文字不动）："),
                         QLineEdit::Normal, oldText);
                     if (newText.isNull() || newText.isEmpty()) {
                         ran = false;
@@ -854,8 +855,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
         case InlineAddText: {
             QString body = inlineTextForTestSet_ ? inlineTextForTest_
                                                  : QInputDialog::getText(
-                                                       this, QStringLiteral("在这里加文字"),
-                                                       QStringLiteral("框就是文字落的位置（框高定字号，字太长会自动缩，不压扁）："),
+                                                       this, TR("在这里加文字"),
+                                                       TR("框就是文字落的位置（框高定字号，字太长会自动缩，不压扁）："),
                                                        QLineEdit::Normal, QString());
             if (body.isEmpty()) {
                 ran = false;
@@ -869,8 +870,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
         }
         case InlineReplaceImage: {
             const QString img = QFileDialog::getOpenFileName(
-                this, QStringLiteral("选一张替换图片"), QString(),
-                QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"));
+                this, TR("选一张替换图片"), QString(),
+                TR("图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"));
             if (img.isEmpty()) {
                 ran = false;
                 break;
@@ -889,8 +890,8 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
     if (!ran) return;
     if (!st.ok()) {
         if (inPlace) QFile::remove(target);
-        showMessageBox(this, QStringLiteral("没改成"), QString::fromStdString(st.toString()));
-        appendLog(QStringLiteral("就地编辑失败: ") + QString::fromStdString(st.toString()));
+        showMessageBox(this, TR("没改成"), QString::fromStdString(st.toString()));
+        appendLog(TR("就地编辑失败: ") + QString::fromStdString(st.toString()));
         return;
     }
 
@@ -900,14 +901,14 @@ void MainWindow::applyInlineEdit(int page, const QRectF& rect) {
         if (viewer_ != nullptr) viewer_->closeDocument();
         const bool removed = QFile::remove(output);
         if (!QFile::rename(target, output)) {
-            appendLog(QStringLiteral("换名失败（旧件删除%1），结果留在: %2")
-                          .arg(removed ? QStringLiteral("成功") : QStringLiteral("没成功"))
+            appendLog(TR("换名失败（旧件删除%1），结果留在: %2")
+                          .arg(removed ? TR("成功") : TR("没成功"))
                           .arg(target));
             return;
         }
     }
 
-    appendLog(QStringLiteral("已在预览里改好「%1」（第 %2 页）-> %3")
+    appendLog(TR("已在预览里改好「%1」（第 %2 页）-> %3")
                   .arg(inlineActionName(action))
                   .arg(page)
                   .arg(QFileInfo(output).fileName()));
@@ -920,11 +921,11 @@ QString MainWindow::runPreviewTextEdit(int page, const QRectF& rect, const QStri
     if (viewer_ == nullptr) return QString();
     const QString source = viewer_->currentPath();
     if (source.isEmpty()) {
-        appendLog(QStringLiteral("预览里还没有打开的 PDF，先双击一个 PDF 再改"));
+        appendLog(TR("预览里还没有打开的 PDF，先双击一个 PDF 再改"));
         return QString();
     }
     if (rect.width() < 1.0 || rect.height() < 1.0) {
-        appendLog(QStringLiteral("框太小了，什么也没改"));
+        appendLog(TR("框太小了，什么也没改"));
         return QString();
     }
     auto backend = converter_ ? converter_->pdfBackend() : nullptr;
@@ -945,7 +946,7 @@ QString MainWindow::runPreviewTextEdit(int page, const QRectF& rect, const QStri
     if (inPlace) {
         target = QDir(outInfo.absolutePath())
                      .filePath(outInfo.completeBaseName() +
-                               QStringLiteral("_编辑中_%1.pdf").arg(QDateTime::currentMSecsSinceEpoch()));
+                               TR("_编辑中_%1.pdf").arg(QDateTime::currentMSecsSinceEpoch()));
     }
 
     pw::ReplaceOptions opts;
@@ -964,8 +965,8 @@ QString MainWindow::runPreviewTextEdit(int page, const QRectF& rect, const QStri
 
     if (!st.ok()) {
         if (inPlace) QFile::remove(target);
-        showMessageBox(this, QStringLiteral("没改成"), QString::fromStdString(st.toString()));
-        appendLog(QStringLiteral("就地编辑失败: ") + QString::fromStdString(st.toString()));
+        showMessageBox(this, TR("没改成"), QString::fromStdString(st.toString()));
+        appendLog(TR("就地编辑失败: ") + QString::fromStdString(st.toString()));
         return QString();
     }
     if (inPlace) {
@@ -973,14 +974,14 @@ QString MainWindow::runPreviewTextEdit(int page, const QRectF& rect, const QStri
         if (viewer_ != nullptr) viewer_->closeDocument();
         const bool removed = QFile::remove(output);
         if (!QFile::rename(target, output)) {
-            appendLog(QStringLiteral("换名失败（旧件删除%1），结果留在: %2")
-                          .arg(removed ? QStringLiteral("成功") : QStringLiteral("没成功"))
+            appendLog(TR("换名失败（旧件删除%1），结果留在: %2")
+                          .arg(removed ? TR("成功") : TR("没成功"))
                           .arg(target));
             return QString();
         }
     }
 
-    appendLog(QStringLiteral("已在预览里%1（第 %2 页）-> %3").arg(what).arg(page).arg(QFileInfo(output).fileName()));
+    appendLog(TR("已在预览里%1（第 %2 页）-> %3").arg(what).arg(page).arg(QFileInfo(output).fileName()));
     reloadAfterInline(output, page, savedScroll);
     return output;
 }
@@ -988,11 +989,11 @@ QString MainWindow::runPreviewTextEdit(int page, const QRectF& rect, const QStri
 QString MainWindow::previewReplaceText(int page, const QRectF& rect, const QString& text,
                                        bool deleteOnly) {
     return runPreviewTextEdit(page, rect, text, deleteOnly, 0.0, true,
-                              deleteOnly ? QStringLiteral("删掉这块文字") : QStringLiteral("改好这块文字"));
+                              deleteOnly ? TR("删掉这块文字") : TR("改好这块文字"));
 }
 
 QString MainWindow::previewAddText(int page, const QRectF& rect, const QString& text, double fontSize) {
-    return runPreviewTextEdit(page, rect, text, false, fontSize, false, QStringLiteral("加了文字"));
+    return runPreviewTextEdit(page, rect, text, false, fontSize, false, TR("加了文字"));
 }
 
 void MainWindow::previewInlineEditForTest(int action, int page, const QRectF& rect,
@@ -1010,15 +1011,15 @@ QString MainWindow::inlineOutputPath(const QString& source) {
     const QFileInfo info(source);
     const QString stem = info.completeBaseName();
     // 已经叫 xxx_已编辑.pdf：继续改同一个（走临时文件换名，不会写坏）
-    if (stem.endsWith(QStringLiteral("_已编辑"))) return info.absoluteFilePath();
-    return QDir(info.absolutePath()).filePath(stem + QStringLiteral("_已编辑.pdf"));
+    if (stem.endsWith(TR("_已编辑"))) return info.absoluteFilePath();
+    return QDir(info.absolutePath()).filePath(stem + TR("_已编辑.pdf"));
 }
 
 void MainWindow::reloadAfterInline(const QString& output, int page, int scrollValue) {
     if (viewer_ == nullptr) return;
     QString error;
     if (!viewer_->openDocument(output, &error)) {
-        appendLog(QStringLiteral("刷新预览失败: ") + error);
+        appendLog(TR("刷新预览失败: ") + error);
         return;
     }
     // 重载会把滚动条归零：先按页跳回去，再按改之前记下的滚动值还原到同一处（不是只回页顶）
@@ -1033,86 +1034,86 @@ void MainWindow::reloadAfterInline(const QString& output, int page, int scrollVa
 void MainWindow::addBookmarkHere(int page) {
     if (bookmarkTree_ == nullptr || viewer_ == nullptr) return;
     if (bookmarkPath_.isEmpty()) {
-        appendLog(QStringLiteral("先预览一个 PDF，再往它的目录里加条目"));
+        appendLog(TR("先预览一个 PDF，再往它的目录里加条目"));
         return;
     }
 
     auto* item = new QTreeWidgetItem();
-    const QString title = QStringLiteral("第 %1 页").arg(page);
+    const QString title = TR("第 %1 页").arg(page);
     item->setText(0, title);
     item->setText(1, QString::number(page));
     item->setToolTip(0, title);
-    item->setToolTip(1, QStringLiteral("跳到第 %1 页").arg(page));
+    item->setToolTip(1, TR("跳到第 %1 页").arg(page));
     item->setData(0, Qt::UserRole, page);
     bookmarkTree_->addTopLevelItem(item);
     bookmarkTree_->setCurrentItem(item);
     bookmarkTree_->scrollToItem(item);
-    appendLog(QStringLiteral("已在书签面板加了一条「%1」；要改名点「修改」，改完点「应用」写回 PDF")
+    appendLog(TR("已在书签面板加了一条「%1」；要改名点「修改」，改完点「应用」写回 PDF")
                   .arg(title));
 }
 
 void MainWindow::createMenus() {
     // ---- 文件 ----
-    auto* fileMenu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
-    fileMenu->addAction(QStringLiteral("添加文件…"), QKeySequence::Open, this, &MainWindow::addFiles);
-    fileMenu->addAction(QStringLiteral("移除选中"), this, &MainWindow::removeSelected);
-    fileMenu->addAction(QStringLiteral("清空列表"), this, &MainWindow::clearFiles);
+    auto* fileMenu = menuBar()->addMenu(TR("文件(&F)"));
+    fileMenu->addAction(TR("添加文件…"), QKeySequence::Open, this, &MainWindow::addFiles);
+    fileMenu->addAction(TR("移除选中"), this, &MainWindow::removeSelected);
+    fileMenu->addAction(TR("清空列表"), this, &MainWindow::clearFiles);
     fileMenu->addSeparator();
-    fileMenu->addAction(QStringLiteral("退出"), QKeySequence::Quit, this, &QWidget::close);
+    fileMenu->addAction(TR("退出"), QKeySequence::Quit, this, &QWidget::close);
 
     // ---- 转换 ----
-    auto* convertMenu = menuBar()->addMenu(QStringLiteral("转换(&C)"));
-    convertMenu->addAction(QStringLiteral("开始转换…"), QKeySequence(QStringLiteral("Ctrl+Return")), this,
+    auto* convertMenu = menuBar()->addMenu(TR("转换(&C)"));
+    convertMenu->addAction(TR("开始转换…"), QKeySequence(QStringLiteral("Ctrl+Return")), this,
                            &MainWindow::startConversion);
 
     // ---- PDF 工具 ----
     // 页面级操作在前，文档级操作在后（中间隔一条线），五项各开一个独立窗口
-    auto* pdfMenu = menuBar()->addMenu(QStringLiteral("PDF 工具(&P)"));
-    pdfMenu->addAction(QStringLiteral("合并 PDF…"), this, &MainWindow::mergePdfs);
-    pdfMenu->addAction(QStringLiteral("拆分 PDF…"), this, &MainWindow::splitPdf);
-    pdfMenu->addAction(QStringLiteral("抽取页面…"), this, &MainWindow::extractPages);
-    pdfMenu->addAction(QStringLiteral("页面编辑…"), this, &MainWindow::editPages);
+    auto* pdfMenu = menuBar()->addMenu(TR("PDF 工具(&P)"));
+    pdfMenu->addAction(TR("合并 PDF…"), this, &MainWindow::mergePdfs);
+    pdfMenu->addAction(TR("拆分 PDF…"), this, &MainWindow::splitPdf);
+    pdfMenu->addAction(TR("抽取页面…"), this, &MainWindow::extractPages);
+    pdfMenu->addAction(TR("页面编辑…"), this, &MainWindow::editPages);
     pdfMenu->addSeparator();
-    pdfMenu->addAction(QStringLiteral("元数据…"), this, &MainWindow::openMetadata);
-    pdfMenu->addAction(QStringLiteral("加密 / 解密…"), this, &MainWindow::openSecurity);
-    pdfMenu->addAction(QStringLiteral("压缩…"), this, &MainWindow::openCompress);
-    pdfMenu->addAction(QStringLiteral("水印…"), this, &MainWindow::openWatermark);
-    pdfMenu->addAction(QStringLiteral("图片转 PDF…"), this, &MainWindow::openImageToPdf);
-    pdfMenu->addAction(QStringLiteral("OCR 文字识别…"), this, &MainWindow::openOcr);
+    pdfMenu->addAction(TR("元数据…"), this, &MainWindow::openMetadata);
+    pdfMenu->addAction(TR("加密 / 解密…"), this, &MainWindow::openSecurity);
+    pdfMenu->addAction(TR("压缩…"), this, &MainWindow::openCompress);
+    pdfMenu->addAction(TR("水印…"), this, &MainWindow::openWatermark);
+    pdfMenu->addAction(TR("图片转 PDF…"), this, &MainWindow::openImageToPdf);
+    pdfMenu->addAction(TR("OCR 文字识别…"), this, &MainWindow::openOcr);
 
     // ---- 编辑与批注 ----
     // 五项各开一个窗口；改文字/图片拆成"文字"和"图片"两条路径，由同一个入口选择
-    auto* editMenu = menuBar()->addMenu(QStringLiteral("编辑与批注(&E)"));
+    auto* editMenu = menuBar()->addMenu(TR("编辑与批注(&E)"));
     editMenu->setObjectName(QStringLiteral("menuEditAnnot"));
-    editMenu->addAction(QStringLiteral("修改文字、图片…"), this, &MainWindow::openTextImage);
-    editMenu->addAction(QStringLiteral("注释批注…"), this, &MainWindow::openAnnot);
-    editMenu->addAction(QStringLiteral("添加超链接…"), this, &MainWindow::openLink);
-    editMenu->addAction(QStringLiteral("查找替换…"), this, &MainWindow::openFindReplace);
-    editMenu->addAction(QStringLiteral("表单处理…"), this, &MainWindow::openForm);
+    editMenu->addAction(TR("修改文字、图片…"), this, &MainWindow::openTextImage);
+    editMenu->addAction(TR("注释批注…"), this, &MainWindow::openAnnot);
+    editMenu->addAction(TR("添加超链接…"), this, &MainWindow::openLink);
+    editMenu->addAction(TR("查找替换…"), this, &MainWindow::openFindReplace);
+    editMenu->addAction(TR("表单处理…"), this, &MainWindow::openForm);
     editMenu->addSeparator();
     // 不进窗口、直接在页面上框一下就改：和预览右键同一个菜单
-    editMenu->addAction(QStringLiteral("在预览上直接编辑（右键）…"), this, [this] {
+    editMenu->addAction(TR("在预览上直接编辑（右键）…"), this, [this] {
         showPreviewMenu(viewer_ != nullptr ? viewer_->currentPage() : 1, QCursor::pos());
     });
 
     // ---- 视图：多级菜单，文件列表（显示/隐藏 + 靠左/靠右）+ 日志窗口（显示/隐藏）+ 缩放 ----
-    auto* viewMenu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
+    auto* viewMenu = menuBar()->addMenu(TR("视图(&V)"));
 
-    auto* fileListMenu = viewMenu->addMenu(QStringLiteral("文件列表"));
+    auto* fileListMenu = viewMenu->addMenu(TR("文件列表"));
     fileListMenu->setObjectName(QStringLiteral("menuFileList"));
 
     fileVisibleGroup_ = new QActionGroup(this);
     fileVisibleGroup_->setExclusive(true);
 
     // 显隐两项互斥，跟日志窗口同一套写法；dock 自带的关闭按钮也会把勾选同步过来
-    showFilesAct_ = fileListMenu->addAction(QStringLiteral("显示文件列表"));
+    showFilesAct_ = fileListMenu->addAction(TR("显示文件列表"));
     showFilesAct_->setObjectName(QStringLiteral("fileShowAction"));
     showFilesAct_->setCheckable(true);
     showFilesAct_->setChecked(true);
     showFilesAct_->setActionGroup(fileVisibleGroup_);
     connect(showFilesAct_, &QAction::triggered, this, [this] { showFileList(true); });
 
-    hideFilesAct_ = fileListMenu->addAction(QStringLiteral("隐藏文件列表"));
+    hideFilesAct_ = fileListMenu->addAction(TR("隐藏文件列表"));
     hideFilesAct_->setObjectName(QStringLiteral("fileHideAction"));
     hideFilesAct_->setCheckable(true);
     hideFilesAct_->setActionGroup(fileVisibleGroup_);
@@ -1123,7 +1124,7 @@ void MainWindow::createMenus() {
     dockSideGroup_ = new QActionGroup(this);
     dockSideGroup_->setExclusive(true);
 
-    auto* leftAct = fileListMenu->addAction(QStringLiteral("靠左"));
+    auto* leftAct = fileListMenu->addAction(TR("靠左"));
     leftAct->setObjectName(QStringLiteral("dockLeftAction"));
     leftAct->setCheckable(true);
     leftAct->setChecked(true);
@@ -1131,71 +1132,71 @@ void MainWindow::createMenus() {
     dockLeftAct_ = leftAct;
     connect(leftAct, &QAction::triggered, this, [this] { dockFileList(false); });
 
-    auto* rightAct = fileListMenu->addAction(QStringLiteral("靠右"));
+    auto* rightAct = fileListMenu->addAction(TR("靠右"));
     rightAct->setObjectName(QStringLiteral("dockRightAction"));
     rightAct->setCheckable(true);
     rightAct->setActionGroup(dockSideGroup_);
     dockRightAct_ = rightAct;
     connect(rightAct, &QAction::triggered, this, [this] { dockFileList(true); });
 
-    auto* logMenu = viewMenu->addMenu(QStringLiteral("日志窗口"));
+    auto* logMenu = viewMenu->addMenu(TR("日志窗口"));
     logMenu->setObjectName(QStringLiteral("menuLogWindow"));
     logGroup_ = new QActionGroup(this);
     logGroup_->setExclusive(true);
 
-    logShowAct_ = logMenu->addAction(QStringLiteral("显示"));
+    logShowAct_ = logMenu->addAction(TR("显示"));
     logShowAct_->setObjectName(QStringLiteral("logShowAction"));
     logShowAct_->setCheckable(true);
     logShowAct_->setChecked(true);
     logShowAct_->setActionGroup(logGroup_);
     connect(logShowAct_, &QAction::triggered, this, [this] { setLogVisible(true); });
 
-    logHideAct_ = logMenu->addAction(QStringLiteral("隐藏"));
+    logHideAct_ = logMenu->addAction(TR("隐藏"));
     logHideAct_->setObjectName(QStringLiteral("logHideAction"));
     logHideAct_->setCheckable(true);
     logHideAct_->setActionGroup(logGroup_);
     connect(logHideAct_, &QAction::triggered, this, [this] { setLogVisible(false); });
 
     // 书签 / 目录面板：跟日志窗口同一套两级写法（显示 / 隐藏 互斥）
-    auto* bookmarkMenu = viewMenu->addMenu(QStringLiteral("书签目录"));
+    auto* bookmarkMenu = viewMenu->addMenu(TR("书签目录"));
     bookmarkMenu->setObjectName(QStringLiteral("menuBookmark"));
     bookmarkGroup_ = new QActionGroup(this);
     bookmarkGroup_->setExclusive(true);
 
-    bookmarkShowAct_ = bookmarkMenu->addAction(QStringLiteral("显示书签目录"));
+    bookmarkShowAct_ = bookmarkMenu->addAction(TR("显示书签目录"));
     bookmarkShowAct_->setObjectName(QStringLiteral("bookmarkShowAction"));
     bookmarkShowAct_->setCheckable(true);
     bookmarkShowAct_->setChecked(true);
     bookmarkShowAct_->setActionGroup(bookmarkGroup_);
     connect(bookmarkShowAct_, &QAction::triggered, this, [this] { setBookmarksVisible(true); });
 
-    bookmarkHideAct_ = bookmarkMenu->addAction(QStringLiteral("隐藏书签目录"));
+    bookmarkHideAct_ = bookmarkMenu->addAction(TR("隐藏书签目录"));
     bookmarkHideAct_->setObjectName(QStringLiteral("bookmarkHideAction"));
     bookmarkHideAct_->setCheckable(true);
     bookmarkHideAct_->setActionGroup(bookmarkGroup_);
     connect(bookmarkHideAct_, &QAction::triggered, this, [this] { setBookmarksVisible(false); });
 
     // 缩放：导航按钮已经挪到预览区右下角，这里留键盘/菜单入口，并保留"适应宽度 / 适应窗口"
-    auto* zoomMenu = viewMenu->addMenu(QStringLiteral("缩放"));
+    auto* zoomMenu = viewMenu->addMenu(TR("缩放"));
     zoomMenu->setObjectName(QStringLiteral("menuZoom"));
-    auto* zoomInAct = zoomMenu->addAction(QStringLiteral("放大一档"));
+    auto* zoomInAct = zoomMenu->addAction(TR("放大一档"));
     zoomInAct->setObjectName(QStringLiteral("zoomInAction"));
     zoomInAct->setShortcuts({QKeySequence::ZoomIn, QKeySequence(QStringLiteral("Ctrl+="))});
     connect(zoomInAct, &QAction::triggered, this, [this] { viewer_->zoomIn(); });
-    auto* zoomOutAct = zoomMenu->addAction(QStringLiteral("缩小一档"));
+    auto* zoomOutAct = zoomMenu->addAction(TR("缩小一档"));
     zoomOutAct->setObjectName(QStringLiteral("zoomOutAction"));
     zoomOutAct->setShortcut(QKeySequence::ZoomOut);
     connect(zoomOutAct, &QAction::triggered, this, [this] { viewer_->zoomOut(); });
     zoomMenu->addSeparator();
-    auto* fitWidthAct = zoomMenu->addAction(QStringLiteral("适应宽度"));
+    auto* fitWidthAct = zoomMenu->addAction(TR("适应宽度"));
     fitWidthAct->setObjectName(QStringLiteral("fitWidthAction"));
     fitWidthAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+1")));
     connect(fitWidthAct, &QAction::triggered, this, [this] { viewer_->fitWidth(); });
-    auto* fitPageAct = zoomMenu->addAction(QStringLiteral("适应窗口"));
+    auto* fitPageAct = zoomMenu->addAction(TR("适应窗口"));
     fitPageAct->setObjectName(QStringLiteral("fitPageAction"));
     fitPageAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+0")));
     connect(fitPageAct, &QAction::triggered, this, [this] { viewer_->fitPage(); });
-    auto* actualAct = zoomMenu->addAction(QStringLiteral("实际大小（100%）"));
+    auto* actualAct = zoomMenu->addAction(TR("实际大小（100%）"));
     actualAct->setObjectName(QStringLiteral("actualSizeAction"));
     actualAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+Alt+0")));
     connect(actualAct, &QAction::triggered, this, [this] { viewer_->setZoom(1.0); });
@@ -1212,10 +1213,83 @@ void MainWindow::createMenus() {
     });
 
     // ---- 帮助 ----
-    auto* helpMenu = menuBar()->addMenu(QStringLiteral("帮助(&H)"));
-    helpMenu->addAction(QStringLiteral("能力报告"), this, &MainWindow::showCapabilityReport);
+    auto* helpMenu = menuBar()->addMenu(TR("帮助(&H)"));
+    helpMenu->addAction(TR("能力报告"), this, &MainWindow::showCapabilityReport);
     helpMenu->addSeparator();
-    helpMenu->addAction(QStringLiteral("关于 Pdf-Toolkit…"), this, &MainWindow::showAboutDialog);
+    helpMenu->addAction(TR("关于 Pdf-Toolkit…"), this, &MainWindow::showAboutDialog);
+
+    // ---- 语言：默认跟随系统，也可以手动钉成中文 / English（选择写进 pdfword.ini）----
+    auto* langMenu = menuBar()->addMenu(TR("语言(&L)"));
+    auto* langGroup = new QActionGroup(this);
+    langGroup->setExclusive(true);
+    struct LangChoice {
+        const char* label;
+        pw::i18n::Lang value;
+    };
+    // 语言名用各自的本名（英文界面里 "简体中文" 仍写中文），这样任何环境下都认得出该点哪个
+    const LangChoice choices[] = {
+        {"跟随系统", pw::i18n::Lang::Auto},
+        {"简体中文", pw::i18n::Lang::Zh},
+        {"English", pw::i18n::Lang::En},
+    };
+    const pw::i18n::Lang currentLang = pw::i18n::setting();
+    for (const auto& choice : choices) {
+        auto* act = langMenu->addAction(TR(choice.label));
+        act->setCheckable(true);
+        act->setChecked(currentLang == choice.value);
+        langGroup->addAction(act);
+        const pw::i18n::Lang value = choice.value;
+        connect(act, &QAction::triggered, this, [this, value]() { switchLanguage(value); });
+    }
+}
+
+void MainWindow::switchLanguage(pw::i18n::Lang lang) {
+    if (pw::i18n::setting() == lang) return;
+    // 内存与 ini 一起改：下次启动直接是用户选的语言
+    pw::i18n::setSetting(lang);
+
+    // 所有控件文案都是构造时按当时语言算好的，换语言最稳的做法是重开一个主窗口，
+    // 把会话原样搬过去——不重启进程，文件列表、预览页、缩放都在。
+    const Session session = captureSession();
+    MainWindow* fresh = new MainWindow(converter_, jobs_);
+    fresh->setAttribute(Qt::WA_DeleteOnClose);
+    fresh->show();
+    fresh->applySession(session);
+    close();  // WA_DeleteOnClose：这个窗口随后被删掉
+}
+
+MainWindow::Session MainWindow::captureSession() const {
+    Session s;
+    if (fileList_ != nullptr) {
+        for (int i = 0; i < fileList_->count(); ++i) {
+            if (auto* it = fileList_->item(i)) s.files << it->data(Qt::UserRole).toString();
+        }
+        if (auto* cur = fileList_->currentItem()) s.selectedPath = cur->data(Qt::UserRole).toString();
+    }
+    if (viewer_ != nullptr) {
+        s.previewPath = viewer_->currentPath();
+        s.page = viewer_->currentPage();
+        s.zoom = viewer_->zoom();
+    }
+    return s;
+}
+
+void MainWindow::applySession(const Session& session) {
+    if (!session.files.isEmpty()) addPathsToFileList(session.files);
+    if (fileList_ != nullptr && !session.selectedPath.isEmpty()) {
+        for (int i = 0; i < fileList_->count(); ++i) {
+            auto* it = fileList_->item(i);
+            if (it != nullptr && it->data(Qt::UserRole).toString() == session.selectedPath) {
+                fileList_->setCurrentItem(it);
+                break;
+            }
+        }
+    }
+    if (!session.previewPath.isEmpty()) {
+        previewPath(session.previewPath);
+        if (session.zoom > 0.05 && viewer_ != nullptr) viewer_->setZoom(session.zoom);
+        if (viewer_ != nullptr && session.page > 1) viewer_->showPage(session.page);
+    }
 }
 
 void MainWindow::showAboutDialog() {
@@ -1223,34 +1297,34 @@ void MainWindow::showAboutDialog() {
 #ifdef PDFWORD_APP_VERSION
     const QString version = QStringLiteral(PDFWORD_APP_VERSION);
 #else
-    const QString version = QStringLiteral("0.0.1");
+    const QString version = QStringLiteral("0.0.2");
 #endif
 
     QMessageBox box(this);
-    box.setWindowTitle(QStringLiteral("关于 Pdf-Toolkit"));
+    box.setWindowTitle(TR("关于 Pdf-Toolkit"));
     box.setTextFormat(Qt::RichText);
     box.setIcon(QMessageBox::NoIcon);
     if (!windowIcon().isNull()) box.setIconPixmap(windowIcon().pixmap(72, 72));
-    box.setText(QStringLiteral(
-                    "<h3>Pdf-Toolkit</h3>"
-                    "<p>PDF / Word 转换与预览编辑工具。界面是 Qt 6 Widgets，能力全部落在独立的 core 模块里"
-                    "（C++17 + MuPDF 直接读写 PDF，docx / doc 转换走 LibreOffice 子进程），"
-                    "所以同一套功能桌面界面、命令行、C ABI（web 壳）都能用。</p>"
-                    "<p><b>功能一览</b></p>"
-                    "<ul style=\"margin-top:0;\">"
-                    "<li>转换：PDF ⇄ Word / 图片，批量队列、可取消、带进度</li>"
-                    "<li>预览里直接改：拖框改字、加字、批注、超链接、表单、书签目录</li>"
-                    "<li>页面：合并 / 拆分 / 抽取 / 重排 / 旋转 / 裁剪 / 插页</li>"
-                    "<li>其他：文字与图片水印、压缩、加密解密、元数据、OCR 文字层</li>"
-                    "</ul>"
-                    "<p><b>版本：</b>%1<br/>"
-                    "<b>联系人：</b>王先生<br/>"
-                    "<b>邮箱：</b><a href=\"mailto:qazwsxwtc@163.com\">qazwsxwtc@163.com</a></p>")
-                    .arg(version));
+    box.setText(QStringLiteral("<h3>Pdf-Toolkit</h3>")
+                + TR("<p>PDF / Word 转换与预览编辑工具。界面是 Qt 6 Widgets，能力全部落在独立的 core 模块里")
+                + TR("（C++17 + MuPDF 直接读写 PDF，docx / doc 转换走 LibreOffice 子进程），")
+                + TR("所以同一套功能桌面界面、命令行、C ABI（web 壳）都能用。</p>")
+                + TR("<p><b>功能一览</b></p>")
+                + "<ul style=\"margin-top:0;\">"
+                + TR("<li>转换：PDF ⇄ Word / 图片，批量队列、可取消、带进度</li>")
+                + TR("<li>预览里直接改：拖框改字、加字、批注、超链接、表单、书签目录</li>")
+                + TR("<li>页面：合并 / 拆分 / 抽取 / 重排 / 旋转 / 裁剪 / 插页</li>")
+                + TR("<li>其他：文字与图片水印、压缩、加密解密、元数据、OCR 文字层</li>")
+                + "</ul>"
+                + TR("<p><b>版本：</b>%1<br/>")
+                + TR("<b>联系人：</b>王先生<br/>")
+                + TR("<b>邮箱：</b><a href=\"mailto:qazwsxwtc@163.com\">qazwsxwtc@163.com</a></p>")
+                );
+    box.setText(box.text().arg(version));
     // 让邮箱链接可点（默认 QMessageBox 里的富文本不响应链接）
     box.setTextInteractionFlags(Qt::TextBrowserInteraction);
     box.setStandardButtons(QMessageBox::Ok);
-    if (auto* ok = box.button(QMessageBox::Ok)) ok->setText(QStringLiteral("知道了"));
+    if (auto* ok = box.button(QMessageBox::Ok)) ok->setText(TR("知道了"));
     box.exec();
 }
 
@@ -1352,8 +1426,8 @@ void MainWindow::centerOnScreen() {
 
 void MainWindow::addFiles() {
     const QStringList files = QFileDialog::getOpenFileNames(
-        this, QStringLiteral("选择文件"), QString(),
-        QStringLiteral("文档 (*.pdf *.docx *.doc *.odt *.rtf *.txt *.xlsx *.pptx);;所有文件 (*.*)"));
+        this, TR("选择文件"), QString(),
+        TR("文档 (*.pdf *.docx *.doc *.odt *.rtf *.txt *.xlsx *.pptx);;所有文件 (*.*)"));
     addPathsToFileList(files);
 }
 
@@ -1395,10 +1469,10 @@ int MainWindow::addPathsToFileList(const QStringList& paths) {
     }
 
     if (added > 0) {
-        appendLog(QStringLiteral("已添加 %1 个文件").arg(added));
+        appendLog(TR("已添加 %1 个文件").arg(added));
     }
     if (rejected > 0) {
-        appendLog(QStringLiteral("忽略 %1 个不支持的文件（只收 pdf/docx/doc/odt/rtf/txt/xlsx/pptx）")
+        appendLog(TR("忽略 %1 个不支持的文件（只收 pdf/docx/doc/odt/rtf/txt/xlsx/pptx）")
                       .arg(rejected));
     }
     return added;
@@ -1408,7 +1482,7 @@ void MainWindow::previewPath(const QString& path) {
     if (fileExt(path) != QStringLiteral("pdf")) return;
     QString error;
     if (!viewer_->openDocument(path, &error)) {
-        appendLog(QStringLiteral("预览失败: ") + error);
+        appendLog(TR("预览失败: ") + error);
         refreshBookmarkTree(QString());
         return;
     }
@@ -1448,7 +1522,7 @@ void MainWindow::dropEvent(QDropEvent* e) {
     e->setDropAction(Qt::CopyAction);
 
     if (paths.empty()) {
-        appendLog(QStringLiteral("拖入的内容不是本地文件，已忽略"));
+        appendLog(TR("拖入的内容不是本地文件，已忽略"));
         return;
     }
     if (addPathsToFileList(paths) > 0 && paths.size() == 1) previewPath(paths.first());
@@ -1474,16 +1548,16 @@ void MainWindow::showFileListMenu(const QPoint& pos) {
     }
 
     QMenu menu(this);
-    auto* previewAct = menu.addAction(QStringLiteral("预览"));
+    auto* previewAct = menu.addAction(TR("预览"));
     previewAct->setEnabled(item != nullptr &&
                            fileExt(item->data(Qt::UserRole).toString()) == QStringLiteral("pdf"));
     menu.addSeparator();
-    auto* removeAct = menu.addAction(QStringLiteral("删除"));
-    removeAct->setToolTip(QStringLiteral("从列表移除选中的文件，磁盘上的文件不动"));
-    auto* clearAct = menu.addAction(QStringLiteral("清空"));
-    clearAct->setToolTip(QStringLiteral("清空整个待处理列表，磁盘上的文件不动"));
-    auto* renameAct = menu.addAction(QStringLiteral("重命名文件…"));
-    renameAct->setToolTip(QStringLiteral("改磁盘上的真实文件名（选中单个文件时可用）"));
+    auto* removeAct = menu.addAction(TR("删除"));
+    removeAct->setToolTip(TR("从列表移除选中的文件，磁盘上的文件不动"));
+    auto* clearAct = menu.addAction(TR("清空"));
+    clearAct->setToolTip(TR("清空整个待处理列表，磁盘上的文件不动"));
+    auto* renameAct = menu.addAction(TR("重命名文件…"));
+    renameAct->setToolTip(TR("改磁盘上的真实文件名（选中单个文件时可用）"));
 
     const bool hasItems = fileList_->count() > 0;
     removeAct->setEnabled(hasItems);
@@ -1497,11 +1571,11 @@ void MainWindow::showFileListMenu(const QPoint& pos) {
     } else if (chosen == removeAct) {
         const int n = fileList_->selectedItems().size();
         removeSelected();
-        appendLog(QStringLiteral("已从列表删除 %1 个文件（磁盘上的文件未改动）").arg(n));
+        appendLog(TR("已从列表删除 %1 个文件（磁盘上的文件未改动）").arg(n));
     } else if (chosen == clearAct) {
         const int n = fileList_->count();
         clearFiles();
-        appendLog(QStringLiteral("已清空待处理列表（%1 个文件，磁盘上的文件未改动）").arg(n));
+        appendLog(TR("已清空待处理列表（%1 个文件，磁盘上的文件未改动）").arg(n));
     } else if (chosen == renameAct) {
         renameSelectedFile();
     }
@@ -1510,8 +1584,8 @@ void MainWindow::showFileListMenu(const QPoint& pos) {
 void MainWindow::renameSelectedFile() {
     auto* item = fileList_->currentItem();
     if (item == nullptr || fileList_->selectedItems().size() != 1) {
-        QMessageBox::information(this, QStringLiteral("重命名"),
-                                 QStringLiteral("先在列表里选中一个文件再重命名"));
+        QMessageBox::information(this, TR("重命名"),
+                                 TR("先在列表里选中一个文件再重命名"));
         return;
     }
 
@@ -1519,8 +1593,8 @@ void MainWindow::renameSelectedFile() {
     const QFileInfo info(oldPath);
     bool ok = false;
     const QString newName = QInputDialog::getText(
-                                this, QStringLiteral("重命名文件"),
-                                QStringLiteral("新文件名（含扩展名）：\n当前：%1").arg(oldPath),
+                                this, TR("重命名文件"),
+                                TR("新文件名（含扩展名）：\n当前：%1").arg(oldPath),
                                 QLineEdit::Normal, info.fileName(), &ok)
                                 .trimmed();
     if (!ok || newName.isEmpty() || newName == info.fileName()) return;
@@ -1529,21 +1603,21 @@ void MainWindow::renameSelectedFile() {
     static const QString kIllegal = QStringLiteral("\\/:*?\"<>|");
     for (const QChar c : newName) {
         if (kIllegal.contains(c)) {
-            QMessageBox::warning(this, QStringLiteral("文件名不合法"),
-                                 QStringLiteral("文件名里不能有 \\ / : * ? \" < > | 这些字符"));
+            QMessageBox::warning(this, TR("文件名不合法"),
+                                 TR("文件名里不能有 \\ / : * ? \" < > | 这些字符"));
             return;
         }
     }
     if (newName.endsWith(QLatin1Char(' ')) || newName.endsWith(QLatin1Char('.'))) {
-        QMessageBox::warning(this, QStringLiteral("文件名不合法"),
-                             QStringLiteral("文件名结尾不能是空格或句点"));
+        QMessageBox::warning(this, TR("文件名不合法"),
+                             TR("文件名结尾不能是空格或句点"));
         return;
     }
 
     const QString newPath = info.absolutePath() + QLatin1Char('/') + newName;
     if (QFileInfo::exists(newPath)) {
-        QMessageBox::warning(this, QStringLiteral("重命名失败"),
-                             QStringLiteral("目标文件已存在：\n%1").arg(newPath));
+        QMessageBox::warning(this, TR("重命名失败"),
+                             TR("目标文件已存在：\n%1").arg(newPath));
         return;
     }
 
@@ -1551,8 +1625,8 @@ void MainWindow::renameSelectedFile() {
     std::filesystem::rename(pw::fsPath(oldPath.toUtf8().toStdString()),
                             pw::fsPath(newPath.toUtf8().toStdString()), ec);
     if (ec) {
-        QMessageBox::warning(this, QStringLiteral("重命名失败"),
-                             QStringLiteral("系统返回：%1\n（文件可能正被其他程序占用）")
+        QMessageBox::warning(this, TR("重命名失败"),
+                             TR("系统返回：%1\n（文件可能正被其他程序占用）")
                                  .arg(QString::fromStdString(ec.message())));
         return;
     }
@@ -1562,7 +1636,7 @@ void MainWindow::renameSelectedFile() {
     item->setToolTip(newPath);
     // 正在预览的就是这个文件时，跟着重开预览，免得预览还指向已经不存在的旧路径
     if (viewer_ != nullptr && viewer_->currentPath() == oldPath) previewPath(newPath);
-    appendLog(QStringLiteral("已重命名: %1 -> %2").arg(info.fileName(), newName));
+    appendLog(TR("已重命名: %1 -> %2").arg(info.fileName(), newName));
 }
 
 QStringList MainWindow::allFiles() const {
@@ -1576,7 +1650,7 @@ void MainWindow::previewSelected() {
     if (item == nullptr) return;
     const QString path = item->data(Qt::UserRole).toString();
     if (fileExt(path) != QStringLiteral("pdf")) {
-        appendLog(QStringLiteral("只有 PDF 可以预览，其他格式请先转成 PDF"));
+        appendLog(TR("只有 PDF 可以预览，其他格式请先转成 PDF"));
         return;
     }
     // 统一走 previewPath：双击列表换文档时书签面板也要跟着换成新文档的目录
@@ -1586,7 +1660,7 @@ void MainWindow::previewSelected() {
 void MainWindow::startConversion() {
     const QStringList files = selectedFiles();
     if (files.isEmpty()) {
-        appendLog(QStringLiteral("没有可转换的文件：先在待处理文件里添加文件"));
+        appendLog(TR("没有可转换的文件：先在待处理文件里添加文件"));
         return;
     }
 
@@ -1605,12 +1679,12 @@ void MainWindow::startConversion() {
         const QString ext = fileExt(f);
         const bool isPdf = (ext == QStringLiteral("pdf"));
         if (target == QStringLiteral("pdf") && isPdf) {
-            appendLog(QStringLiteral("跳过（已经是 PDF）: ") + f);
+            appendLog(TR("跳过（已经是 PDF）: ") + f);
             ++skipped;
             continue;
         }
         if (target == QStringLiteral("docx") && !isPdf) {
-            appendLog(QStringLiteral("跳过（只有 PDF 能转 docx）: ") + f);
+            appendLog(TR("跳过（只有 PDF 能转 docx）: ") + f);
             ++skipped;
             continue;
         }
@@ -1623,11 +1697,11 @@ void MainWindow::startConversion() {
         }
         int id = jobs_->enqueue(pw::fsPath(f.toUtf8().toStdString()), out, target.toStdString(),
                                 password.toStdString());
-        appendLog(QStringLiteral("任务 #%1 已提交: %2 -> %3").arg(id).arg(f, target));
+        appendLog(TR("任务 #%1 已提交: %2 -> %3").arg(id).arg(f, target));
     }
 
     if (skipped > 0) {
-        statusBar()->showMessage(QStringLiteral("已跳过 %1 个方向不匹配的文件").arg(skipped), 5000);
+        statusBar()->showMessage(TR("已跳过 %1 个方向不匹配的文件").arg(skipped), 5000);
     }
 }
 
@@ -1671,12 +1745,12 @@ void MainWindow::mergePdfs() {
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {
-        appendLog(QStringLiteral("合并失败: ") + QString::fromStdString(st.toString()));
-        statusBar()->showMessage(QStringLiteral("合并失败"), 5000);
+        appendLog(TR("合并失败: ") + QString::fromStdString(st.toString()));
+        statusBar()->showMessage(TR("合并失败"), 5000);
         return;
     }
-    appendLog(QStringLiteral("已合并 %1 个 PDF -> %2").arg(files.size()).arg(dlg.outputPath()));
-    statusBar()->showMessage(QStringLiteral("合并完成: ") + dlg.outputPath(), 5000);
+    appendLog(TR("已合并 %1 个 PDF -> %2").arg(files.size()).arg(dlg.outputPath()));
+    statusBar()->showMessage(TR("合并完成: ") + dlg.outputPath(), 5000);
 }
 
 void MainWindow::splitPdf() {
@@ -1684,11 +1758,11 @@ void MainWindow::splitPdf() {
     if (source.isEmpty()) return;
 
     bool ok = false;
-    const int pagesPerFile = QInputDialog::getInt(this, QStringLiteral("拆分 PDF"),
-                                                  QStringLiteral("每个文件包含多少页："), 20, 1, 100000, 1, &ok);
+    const int pagesPerFile = QInputDialog::getInt(this, TR("拆分 PDF"),
+                                                  TR("每个文件包含多少页："), 20, 1, 100000, 1, &ok);
     if (!ok) return;
 
-    const QString dir = QFileDialog::getExistingDirectory(this, QStringLiteral("拆分输出目录"),
+    const QString dir = QFileDialog::getExistingDirectory(this, TR("拆分输出目录"),
                                                           QFileInfo(source).absolutePath());
     if (dir.isEmpty()) return;
 
@@ -1697,15 +1771,15 @@ void MainWindow::splitPdf() {
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {
-        appendLog(QStringLiteral("拆分失败: ") + QString::fromStdString(st.toString()));
-        statusBar()->showMessage(QStringLiteral("拆分失败"), 5000);
+        appendLog(TR("拆分失败: ") + QString::fromStdString(st.toString()));
+        statusBar()->showMessage(TR("拆分失败"), 5000);
         return;
     }
-    appendLog(QStringLiteral("已拆分 %1（每 %2 页一个文件）-> %3")
+    appendLog(TR("已拆分 %1（每 %2 页一个文件）-> %3")
                   .arg(QFileInfo(source).fileName())
                   .arg(pagesPerFile)
                   .arg(dir));
-    statusBar()->showMessage(QStringLiteral("拆分完成: ") + dir, 5000);
+    statusBar()->showMessage(TR("拆分完成: ") + dir, 5000);
 }
 
 void MainWindow::extractPages() {
@@ -1722,7 +1796,7 @@ void MainWindow::extractPages() {
     const QString source = dlg.sourcePath();
     const std::vector<int> pages = dlg.pages();
     if (pages.empty()) {
-        appendLog(QStringLiteral("没有选中任何页"));
+        appendLog(TR("没有选中任何页"));
         return;
     }
 
@@ -1732,15 +1806,15 @@ void MainWindow::extractPages() {
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {
-        appendLog(QStringLiteral("抽取失败: ") + QString::fromStdString(st.toString()));
-        statusBar()->showMessage(QStringLiteral("抽取失败"), 5000);
+        appendLog(TR("抽取失败: ") + QString::fromStdString(st.toString()));
+        statusBar()->showMessage(TR("抽取失败"), 5000);
         return;
     }
-    appendLog(QStringLiteral("已抽取 %1 页（%2）-> %3")
+    appendLog(TR("已抽取 %1 页（%2）-> %3")
                   .arg(pages.size())
                   .arg(QString::fromStdString(pw::formatPageSpec(pages)))
                   .arg(dlg.outputPath()));
-    statusBar()->showMessage(QStringLiteral("抽取完成: ") + dlg.outputPath(), 5000);
+    statusBar()->showMessage(TR("抽取完成: ") + dlg.outputPath(), 5000);
 }
 
 QString MainWindow::choosePdfSource() {
@@ -1749,12 +1823,12 @@ QString MainWindow::choosePdfSource() {
     const QStringList pdfs = selectedPdfs();
     if (pdfs.size() == 1) return pdfs.first();
     if (pdfs.isEmpty()) {
-        appendLog(QStringLiteral("这里需要一个 PDF：先在待处理文件里添加或选中一个 PDF"));
+        appendLog(TR("这里需要一个 PDF：先在待处理文件里添加或选中一个 PDF"));
         return QString();
     }
     bool ok = false;
-    const QString chosen = QInputDialog::getItem(this, QStringLiteral("选择 PDF"),
-                                                 QStringLiteral("对哪一个 PDF 执行："), pdfs, 0, false, &ok);
+    const QString chosen = QInputDialog::getItem(this, TR("选择 PDF"),
+                                                 TR("对哪一个 PDF 执行："), pdfs, 0, false, &ok);
     return ok ? chosen : QString();
 }
 
@@ -1765,7 +1839,7 @@ void MainWindow::editPages() {
     PageEditorDialog dlg(converter_->pdfBackend(), source, document, QString(), this);
     connect(&dlg, &PageEditorDialog::logMessage, this, [this](const QString& text) { appendLog(text); });
     if (dlg.exec() == QDialog::Accepted) {
-        statusBar()->showMessage(QStringLiteral("页面编辑完成，见日志"), 5000);
+        statusBar()->showMessage(TR("页面编辑完成，见日志"), 5000);
     }
 }
 
@@ -1851,11 +1925,11 @@ void MainWindow::openTextImage() {
 
     // 「修改文字、图片」下面其实两条路：批量改文字走查找替换，换图走替换图片窗口
     QMessageBox box(this);
-    box.setWindowTitle(QStringLiteral("修改文字、图片"));
-    box.setText(QStringLiteral("要改哪一类内容？"));
-    auto* textBtn = box.addButton(QStringLiteral("增删改文字"), QMessageBox::ActionRole);
-    auto* imageBtn = box.addButton(QStringLiteral("替换图片"), QMessageBox::ActionRole);
-    box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+    box.setWindowTitle(TR("修改文字、图片"));
+    box.setText(TR("要改哪一类内容？"));
+    auto* textBtn = box.addButton(TR("增删改文字"), QMessageBox::ActionRole);
+    auto* imageBtn = box.addButton(TR("替换图片"), QMessageBox::ActionRole);
+    box.addButton(TR("取消"), QMessageBox::RejectRole);
     box.exec();
     if (box.clickedButton() == textBtn) {
         auto* dlg = new FindReplaceDialog(converter_->pdfBackend(), source, this);
@@ -1913,7 +1987,7 @@ void MainWindow::openForm() {
 }
 
 void MainWindow::showCapabilityReport() {
-    QMessageBox::information(this, QStringLiteral("能力报告"),
+    QMessageBox::information(this, TR("能力报告"),
                              QString::fromStdString(converter_->capabilityReport()));
 }
 

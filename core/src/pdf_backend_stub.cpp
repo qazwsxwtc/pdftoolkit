@@ -1,4 +1,5 @@
 #include "pdfword/pdf_backend.hpp"
+#include "pdfword/i18n.hpp"
 #include "pdfword/path_util.hpp"
 
 namespace pw {
@@ -15,13 +16,13 @@ public:
     }
     const DocumentInfo& info() const override { return info_; }
     Status pageInfo(int, PageInfo*) const override {
-        return Status::error(ErrorCode::BackendMissing, "未启用 MuPDF，无法读取页面信息");
+        return Status::error(ErrorCode::BackendMissing, pw::i18n::t("未启用 MuPDF，无法读取页面信息"));
     }
     Status pageText(int, std::string*) const override {
-        return Status::error(ErrorCode::BackendMissing, "未启用 MuPDF，无法提取文字");
+        return Status::error(ErrorCode::BackendMissing, pw::i18n::t("未启用 MuPDF，无法提取文字"));
     }
     Status renderPage(int, float, RasterImage*) const override {
-        return Status::error(ErrorCode::BackendMissing, "未启用 MuPDF，无法渲染页面");
+        return Status::error(ErrorCode::BackendMissing, pw::i18n::t("未启用 MuPDF，无法渲染页面"));
     }
 
 private:
@@ -33,12 +34,12 @@ public:
     std::string name() const override { return "stub"; }
     bool available() const override { return false; }
     std::string unavailableReason() const override {
-        return "构建时未启用 MuPDF（CMake 选项 PDFWORD_WITH_MUPDF=OFF 或未找到 SDK）";
+        return pw::i18n::t("构建时未启用 MuPDF（CMake 选项 PDFWORD_WITH_MUPDF=OFF 或未找到 SDK）");
     }
 
     Result<std::shared_ptr<IPdfDocument>> open(const fs::path& path,
                                                const std::string& /*password*/) override {
-        return Status::error(ErrorCode::BackendMissing, unavailableReason() + "；open=" + fsUtf8(path));
+        return Status::error(ErrorCode::BackendMissing, unavailableReason() + pw::i18n::t("；open=") + fsUtf8(path));
     }
     Status merge(const std::vector<fs::path>&, const fs::path&) override {
         return Status::error(ErrorCode::BackendMissing, unavailableReason());

@@ -1,4 +1,5 @@
 #include "SecurityDialog.h"
+#include "I18nUi.h"
 
 #include <filesystem>
 
@@ -30,12 +31,12 @@ constexpr int kPermAnnotate = 1 << 5;
 SecurityDialog::SecurityDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                                QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source) {
-    setWindowTitle(QStringLiteral("加密 / 解密 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("加密 / 解密 — %1").arg(QFileInfo(source_).fileName()));
     resize(560, 340);
 
     auto* root = new QVBoxLayout(this);
-    root->addWidget(new QLabel(QStringLiteral("加密：AES-128，按下面的权限位限制他人操作。"), this));
-    root->addWidget(new QLabel(QStringLiteral("解密：输入源文件当前的打开密码，另存为不加密的副本。"), this));
+    root->addWidget(new QLabel(TR("加密：AES-128，按下面的权限位限制他人操作。"), this));
+    root->addWidget(new QLabel(TR("解密：输入源文件当前的打开密码，另存为不加密的副本。"), this));
 
     auto* form = new QFormLayout();
     userPassword_ = new QLineEdit(this);
@@ -44,15 +45,15 @@ SecurityDialog::SecurityDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
     ownerPassword_->setObjectName(QStringLiteral("ownerPassword"));
     userPassword_->setEchoMode(QLineEdit::Password);
     ownerPassword_->setEchoMode(QLineEdit::Password);
-    userPassword_->setPlaceholderText(QStringLiteral("打开文档时要输入的密码"));
-    ownerPassword_->setPlaceholderText(QStringLiteral("留空则用打开密码代替"));
-    form->addRow(QStringLiteral("打开密码"), userPassword_);
-    form->addRow(QStringLiteral("所有者密码"), ownerPassword_);
+    userPassword_->setPlaceholderText(TR("打开文档时要输入的密码"));
+    ownerPassword_->setPlaceholderText(TR("留空则用打开密码代替"));
+    form->addRow(TR("打开密码"), userPassword_);
+    form->addRow(TR("所有者密码"), ownerPassword_);
 
-    allowPrint_ = new QCheckBox(QStringLiteral("允许打印"), this);
-    allowCopy_ = new QCheckBox(QStringLiteral("允许复制文本"), this);
-    allowModify_ = new QCheckBox(QStringLiteral("允许修改"), this);
-    allowAnnotate_ = new QCheckBox(QStringLiteral("允许批注"), this);
+    allowPrint_ = new QCheckBox(TR("允许打印"), this);
+    allowCopy_ = new QCheckBox(TR("允许复制文本"), this);
+    allowModify_ = new QCheckBox(TR("允许修改"), this);
+    allowAnnotate_ = new QCheckBox(TR("允许批注"), this);
     allowPrint_->setChecked(true);
     allowCopy_->setChecked(true);
     auto* permRow = new QHBoxLayout();
@@ -60,12 +61,12 @@ SecurityDialog::SecurityDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
     permRow->addWidget(allowCopy_);
     permRow->addWidget(allowModify_);
     permRow->addWidget(allowAnnotate_);
-    form->addRow(QStringLiteral("权限"), permRow);
+    form->addRow(TR("权限"), permRow);
     root->addLayout(form);
 
     auto* row = new QHBoxLayout();
-    auto* encryptBtn = new QPushButton(QStringLiteral("加密另存为…"), this);
-    auto* decryptBtn = new QPushButton(QStringLiteral("解密另存为…"), this);
+    auto* encryptBtn = new QPushButton(TR("加密另存为…"), this);
+    auto* decryptBtn = new QPushButton(TR("解密另存为…"), this);
     row->addWidget(encryptBtn);
     row->addWidget(decryptBtn);
     row->addStretch(1);
@@ -73,7 +74,7 @@ SecurityDialog::SecurityDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
     root->addStretch(1);
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(encryptBtn, &QPushButton::clicked, this, &SecurityDialog::encryptPdf);
@@ -84,12 +85,12 @@ SecurityDialog::SecurityDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
 void SecurityDialog::encryptPdf() {
     const QString user = userPassword_->text();
     if (user.isEmpty() && ownerPassword_->text().isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("需要密码"),
-                                 QStringLiteral("至少填一个打开密码或所有者密码"));
+        QMessageBox::information(this, TR("需要密码"),
+                                 TR("至少填一个打开密码或所有者密码"));
         return;
     }
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("加密输出"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_加密")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("加密输出"),
+                                                     suggestPdfOutput(source_, TR("_加密")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -107,22 +108,22 @@ void SecurityDialog::encryptPdf() {
                           pw::fsPath(out.toUtf8().toStdString()), user.toStdString(),
                           ownerPassword_->text().toStdString(), perms);
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("加密失败"), QString::fromStdString(st.toString()));
+        QMessageBox::warning(this, TR("加密失败"), QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已加密（AES-128）-> ") + out);
+    emit logMessage(TR("已加密（AES-128）-> ") + out);
 }
 
 void SecurityDialog::decryptPdf() {
     // 解密要读源文件，密码直接取窗口里的"打开密码"字段
     const QString pwd = userPassword_->text();
     if (pwd.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("需要密码"),
-                                 QStringLiteral("先在“打开密码”里填该 PDF 当前的密码"));
+        QMessageBox::information(this, TR("需要密码"),
+                                 TR("先在“打开密码”里填该 PDF 当前的密码"));
         return;
     }
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("解密输出"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_解密")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("解密输出"),
+                                                     suggestPdfOutput(source_, TR("_解密")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -130,8 +131,8 @@ void SecurityDialog::decryptPdf() {
                                             pw::fsPath(out.toUtf8().toStdString()),
                                             pwd.toStdString());
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("解密失败"), QString::fromStdString(st.toString()));
+        QMessageBox::warning(this, TR("解密失败"), QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已解密 -> ") + out);
+    emit logMessage(TR("已解密 -> ") + out);
 }

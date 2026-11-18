@@ -31,6 +31,25 @@ pdfword/
 > 就得按 AGPL-3.0 把整个软件的源码一起给出去，或者先找 Artifex 买商业许可。
 > 详见文末「[许可与 MuPDF 约束](#许可与-mupdf-约束发布前必读)」。
 
+## 界面语言（中文 / English）
+
+界面自带中文和英文两套文案，**默认跟随系统语言**：Windows 主界面语言是中文就显示中文，
+其它语言一律显示 English。也可以在界面里手动指定，并且会被记住。
+
+- **菜单切换**：菜单栏最右一个顶级菜单 `语言(L)` → `Language(L)`，三项互斥单选：
+  `跟随系统` / `简体中文` / `English`，当前生效的那一项打勾。
+  切换后**立刻整窗换文案**，不用重启进程；文件列表、当前预览文件、当前页、缩放比例都会原样保留。
+- **配置文件**：`pdfword.ini` 里的一行 `language=auto|zh|en`（`auto` 就是跟随系统；
+  也认 `zh_CN` / `en_US` 这种写法）。ini 的查找顺序：环境变量 `PW_CONFIG` 指向的文件 >
+  exe 同目录下的 `pdfword.ini`。菜单切换只会改写这一行，其余配置原样不动。
+- **覆盖范围**：不只界面控件。菜单、对话框、按钮、状态栏、日志窗口、书签面板、
+  以及 core 层返回的错误/状态消息（"PDF 后端: …"、"页码 N 超出范围（本文件共 M 页）"、
+  "_已编辑.pdf" 这类产物名后缀）都在同一张表里，所以 CLI 和 C ABI 的输出也跟着语言走。
+- **文案表**：`core/src/i18n_table.cpp`（中文原文 → English，一条 `{zh, en}` 一行）。
+  查表以**中文原文为 key**，查不到就回落中文原文，因此漏译只会显示中文，不会空白、不会崩。
+  新增文案时把中文字面量用 `pw::i18n::t("…")`（core）或 `TR("…")`（ui）包起来，
+  再往表里补一行英文即可。
+
 ## 构建
 
 ```powershell
@@ -99,28 +118,56 @@ vcpkg 的 `x64-windows` 是动态库三元组，依赖 DLL（harfbuzz、freetype
 - 找不到 → 打印 `OCR: 没找到 Windows SDK 的 cppwinrt 目录，跳过 Windows OCR`，
   `makeOcrEngine()` 返回空，`ocr()` 直接回 `BackendMissing`（其余 PDF 能力不受影响）。
 
-### 中文路径与文件名编码（重要约定）
+### 路径编码：任何语言的文件名都能打开
 
-整条链路只认 UTF-8，凡是把路径当 `std::string` 传的地方都必须按 UTF-8 处理：
+整条链路只认 UTF-8，并且从**入口**就开始保证无损 —— 这一步错了，后面怎么修都没用：
 
-- **CLI**：Windows 上 `argv` 是系统 ANSI 代码页（中文系统 CP936，英文系统 CP1252，中文进去就变成 `?`），
-  进 core 之前一律 `pw::ansiToUtf8()`；
-- **Qt**：`QString::toStdString()` 返回的是**本地 8 位编码**，不是 UTF-8。路径必须写成
-  `pw::fsPath(QString.toUtf8().toStdString())`，这是最容易漏的一处；
-- **core**：`std::string` 只当 UTF-8 用，进 `std::filesystem::path` 一律经 `pw::fsPath()`，
-  往日志/消息输出一律经 `pw::fsUtf8()`（见 `core/include/pdfword/path_util.hpp` 顶部注释）；
-- **C ABI**：`pdfword.dll` 对外契约就是“字符串一律 UTF-8”，`core/capi/pdfword_c.h` 已写明；
-- **MuPDF 1.26**：窄路径接口内部是 `fopen`，按系统 ANSI 解释文件名。所以打开走 `fz_open_file_w`
-  → `pdf_open_document_with_stream`（通用文档走 `fz_open_document_with_stream` + magic），
-  保存走 `_wfopen(..., L"wb")` + `fz_new_output_with_file_ptr` + `pdf_write_document`
-  （1.26 没有 `pdf_save_document_to_output`），读图走 `fz_open_file_w` + `fz_read_all` +
-  `fz_new_image_from_buffer`，保存后记得 `fz_close_output` 再 `fz_drop_output`；
-- **`fstream`**：Windows 上 `std::ofstream(path)` 也吃窄路径，`zip_writer`、`office_runner`、
-  CLI 的文本/图片导出统一用 `path.wstring().c_str()`。
+- **CLI**：Windows 上 `main(char**)` 拿到的是本地代码页（中文系统 CP936），文件名里只要有该代码页表示不了的字符
+  （日文假名、西里尔字母、泰文、emoji…）就会变成 `?`，**不可逆**。所以 CLI 用 `wmain` 直接拿 UTF-16，
+  再转 UTF-8；控制台输出也切到 `SetConsoleOutputCP(CP_UTF8)`，否则中文日志在 cmd 里是乱码。
+- **Qt**：`QString::toStdString()` 返回的是本地 8 位编码，不是 UTF-8。路径必须写成
+  `pw::fsPath(QString.toUtf8().toStdString())`。
+- **core**：`std::string` 只当 UTF-8 用；进 `fs::path` 走 `pw::fsPath()`；出到日志/消息走 `pw::fsUtf8()`。
+- **C ABI**：`pdfword.dll` 的契约就是“字符串一律 UTF-8”，写在 `core/capi/pdfword_c.h`。
+- **MuPDF 1.26**：窄路径接口底层是 `fopen`，按系统 ANSI 解释文件名。所以一律绕开：
+  打开 = `fz_open_file_w` → `pdf_open_document_with_stream`（通用文档 `fz_open_document_with_stream` + magic），
+  保存 = `_wfopen(L"wb")` + `fz_new_output_with_file_ptr` + `pdf_write_document`（1.26 没有
+  `pdf_save_document_to_output`），读图 = `fz_open_file_w` + `fz_read_all` + `fz_new_image_from_buffer`。
+  保存后先 `fz_close_output` 再 `fz_drop_output`，否则 MuPDF 会警告 `dropping unclosed output`、尾部可能没落盘。
+- **`fstream`**：Windows 上 `std::ofstream(path)` 同样是窄路径，`zip_writer`、`office_runner`、CLI 的文本/图片导出
+  都用宽路径打开。
 
-之所以这么较真，是因为真踩过：`PEDOT_活神经细胞周围聚合_中文翻译.pdf` 在非中文代码页的系统上会报
-`IoError: 文件不存在` —— 文件明明躺在桌面，但文件名进 core 时已经被转成本地代码页，字节对不上，
-`fs::exists` 直接判 false。
+### 超长路径与单段名上限
+
+中文/日文文件名很容易把路径顶过 260 字符（`MAX_PATH`）。所有 IO 走 `pw::fsPathLong()`：
+**超过 240 字符自动加 `\\?\` 前缀**（UNC 路径转 `\\?\UNC\`），不依赖系统的 `LongPathsEnabled` 开关。
+实测 267 字符的十层中文目录 + 150 字符文件名，读、写、渲染全部正常。
+
+要注意 Windows 自己的另一条线：**单个文件名（一段）最多 255 字符**，这个用 `\\?\` 也突破不了。
+超了会明确报 `无法写文件，名称 256 字符，超过 255 或路径非法`，而不是甩一串被截断的乱码路径。
+（Emoji 在 UTF-16 下占 2 个码元，最容易顶爆长度，报错里的字符数就是按 UTF-16 计。）
+
+### 特殊符号与 LibreOffice 的 URI
+
+文件名里的空格、`#`、`%`、`&`、`+`、`'`、括号、emoji 都能原样处理，因为：
+
+- 外部进程参数按 MSVCRT 规则加引号（`\` 在引号内紧邻引号或结尾时才转义，所以 `C:\\dir\\` 这种
+  以反斜杠结尾的目录参数也不会把引号弄成未闭合）；
+- LibreOffice 的 `-env:UserInstallation` 是 `file:///` URL，路径里所有非保留字符都做 **percent-encode**。
+  用户名是中文（`C:\\Users\\张三\\…`）、或工作目录带空格 `#` 时，不编码 soffice 会当成非法 URL 直接退出。
+  实测日志：`-env:UserInstallation=file:///D:/.../%E4%B8%AD%E6%96%87%20%E5%B7%A5%E4%BD%9C%23%E7%9B%AE%E5%BD%95/lo-profile`。
+
+### 兼容性实测（本机 Windows，中文代码页）
+
+| 用例 | 结果 |
+| --- | --- |
+| 日文 / 韩文 / 俄文 / 阿拉伯文 / 泰文 / 越南文 文件名：`info` + `extract` + `render` | 21/21 通过 |
+| `emoji😀&%#+'()【】文件.pdf` 同三项 | 通过（含 emoji 与全部特殊符号） |
+| 267 字符深路径（十层中文目录 + 150 字符名）读 / 写 / 渲染 | 通过 |
+| 单段 256 字符输出名 | 明确报错（字符数 256 > 255） |
+| 日文 docx → pdf（工作目录含中文、空格、`#`） | 通过，436 KB |
+| `emoji😀&%#+'` 名 docx → pdf | 通过，443 KB |
+| UI 冒烟（日文名 PDF） | `failures=0`，26 张截图 |
 
 ### LibreOffice 定位（docx ⇄ pdf 转换的前提）
 
@@ -306,7 +353,7 @@ form-dialog` **二十六张图**可以直接打开看布局，
 | 编辑与批注(&E) | 修改文字、图片… / 注释批注… / 添加超链接… / 查找替换… / 表单处理… | 见下节「编辑与批注菜单项」 |
 | 视图(&V) | **两级子菜单**：`文件列表 ▸`（显示文件列表 / 隐藏文件列表 ‖ 靠左 / 靠右）+ `日志窗口 ▸`（显示 / 隐藏）+ `书签目录 ▸`（显示书签目录 / 隐藏书签目录）+ `缩放 ▸`（放大一档 / 缩小一档 ‖ 适应宽度 / 适应窗口 / 实际大小 100%） | 文件面板显隐与停靠位置（也可直接把面板拖成浮动窗口）；日志窗口显隐；书签面板显隐；缩放与适应 |
 | 帮助(&H) | 能力报告 | 弹出后端 / LibreOffice / OCR 诊断（LibreOffice 版本取自缓存，还没转换过就写"未检测"） |
-| 帮助(&H) | 关于 Pdf-Toolkit… | 简介 + 版本号（取自 `project(Pdf-Toolkit VERSION …)`，现为 0.0.1）+ 联系人 / 邮箱（邮箱可点，走默认邮件客户端） |
+| 帮助(&H) | 关于 Pdf-Toolkit… | 简介 + 版本号（取自 `project(Pdf-Toolkit VERSION …)`，现为 0.0.2）+ 联系人 / 邮箱（邮箱可点，走默认邮件客户端） |
 
 **PDF 工具菜单项**
 
@@ -489,7 +536,7 @@ pwsh -File packaging\build-installer.ps1
 - 静默装到指定目录（自测用）：
 
   ```powershell
-  .\dist\Pdf-Toolkit-0.0.1-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
+  .\dist\Pdf-Toolkit-0.0.2-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
   ```
 
 ## 当前状态（说清楚哪些是真跑通了，哪些还没）

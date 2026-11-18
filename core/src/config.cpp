@@ -1,4 +1,5 @@
 #include "pdfword/config.hpp"
+#include "pdfword/i18n.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -37,7 +38,11 @@ std::string toLower(std::string s) {
 // 极简 ini：只支持 `key = value` 与 # / ; 注释，够用且零依赖。
 std::map<std::string, std::string> parseIni(const fs::path& file) {
     std::map<std::string, std::string> out;
+#ifdef _WIN32
+    std::ifstream in(fsPathLong(file).wstring().c_str());
+#else
     std::ifstream in(file);
+#endif
     if (!in) return out;
     std::string line;
     bool first = true;
@@ -133,27 +138,27 @@ bool probeLibreOffice(const fs::path& candidate, fs::path* resolved, std::string
         return false;
     };
 
-    if (candidate.empty()) return fail("路径为空");
+    if (candidate.empty()) return fail(pw::i18n::t("路径为空"));
 
     std::error_code ec;
-    if (!fs::exists(candidate, ec)) return fail("路径不存在: " + fsUtf8(candidate));
+    if (!existsLong(candidate)) return fail(pw::i18n::t("路径不存在: ") + fsUtf8(candidate));
 
     std::vector<fs::path> tried;
     if (fs::is_directory(candidate, ec)) {
         for (const char* rel : {"program/soffice.exe", "soffice.exe", "soffice.com", "soffice"}) {
             fs::path t = candidate / rel;
             tried.push_back(t);
-            if (fs::exists(t, ec) && !fs::is_directory(t, ec)) {
+            if (existsLong(t) && !fs::is_directory(t, ec)) {
                 if (resolved != nullptr) *resolved = fs::absolute(t, ec);
                 return true;
             }
         }
-        return fail("目录内找不到 soffice: " + fsUtf8(candidate));
+        return fail(pw::i18n::t("目录内找不到 soffice: ") + fsUtf8(candidate));
     }
 
     std::string name = toLower(fsUtf8(candidate.filename()));
     if (name != "soffice.exe" && name != "soffice.com" && name != "soffice") {
-        return fail("文件名不是 soffice 可执行入口: " + fsUtf8(candidate));
+        return fail(pw::i18n::t("文件名不是 soffice 可执行入口: ") + fsUtf8(candidate));
     }
     if (resolved != nullptr) *resolved = fs::absolute(candidate, ec);
     return true;
@@ -172,7 +177,7 @@ Config loadConfig(const fs::path& exePath, const fs::path& configFile) {
     if (iniPath.empty()) {
         std::error_code ec;
         fs::path beside = cfg.executableDir / "pdfword.ini";
-        if (fs::exists(beside, ec)) {
+        if (existsLong(beside)) {
             iniPath = beside;
         } else {
             std::string envCfg = envOr("PW_CONFIG", "");
@@ -310,37 +315,37 @@ Config loadConfig(const fs::path& exePath, const fs::path& configFile) {
 
 std::string libreOfficeSetupHint(const Config& config) {
     if (config.libreOfficeDisabled) {
-        return "（PW_LIBREOFFICE_DISABLE 已开启，去掉该环境变量后重启即可启用文档转换）";
+        return pw::i18n::t("（PW_LIBREOFFICE_DISABLE 已开启，去掉该环境变量后重启即可启用文档转换）");
     }
-    return "（填法：在 " + fsUtf8(config.executableDir / "pdfword.ini") +
-           " 里加一行 libre_office=<soffice.exe 或 LibreOffice 目录>，或设环境变量 PW_LIBREOFFICE_PATH）";
+    return pw::i18n::t("（填法：在 ") + fsUtf8(config.executableDir / "pdfword.ini") +
+           pw::i18n::t(" 里加一行 libre_office=<soffice.exe 或 LibreOffice 目录>，或设环境变量 PW_LIBREOFFICE_PATH）");
 }
 
 std::string describeLibreOffice(const Config& config) {
     if (config.libreOfficeDisabled) {
-        return "LibreOffice: 已关闭（PW_LIBREOFFICE_DISABLE 生效，docx ⇄ pdf 转换不可用；PDF 预览等其他功能不受影响）";
+        return pw::i18n::t("LibreOffice: 已关闭（PW_LIBREOFFICE_DISABLE 生效，docx ⇄ pdf 转换不可用；PDF 预览等其他功能不受影响）");
     }
     if (!config.libreOfficeConfigured()) {
         const std::string ini = fsUtf8(config.executableDir / "pdfword.ini");
-        std::string msg = "LibreOffice: 未配置（docx ⇄ pdf 转换不可用）";
-        msg += "\n  填法：在 " + ini + " 里加一行  libre_office=<soffice.exe 或 LibreOffice 目录>";
-        msg += "\n  或设环境变量 PW_LIBREOFFICE_PATH";
+        std::string msg = pw::i18n::t("LibreOffice: 未配置（docx ⇄ pdf 转换不可用）");
+        msg += pw::i18n::t("\n  填法：在 ") + ini + pw::i18n::t(" 里加一行  libre_office=<soffice.exe 或 LibreOffice 目录>");
+        msg += pw::i18n::t("\n  或设环境变量 PW_LIBREOFFICE_PATH");
         if (!config.libreOfficeCandidates.empty()) {
-            msg += "\n  已尝试：";
+            msg += pw::i18n::t("\n  已尝试：");
             const std::size_t show = std::min<std::size_t>(config.libreOfficeCandidates.size(), 6);
             for (std::size_t i = 0; i < show; ++i) {
-                if (i != 0) msg += "、";
+                if (i != 0) msg += pw::i18n::t("、");
                 msg += config.libreOfficeCandidates[i];
             }
             if (config.libreOfficeCandidates.size() > show) {
-                msg += " 等 " + std::to_string(config.libreOfficeCandidates.size()) + " 处";
+                msg += pw::i18n::t(" 等 ") + std::to_string(config.libreOfficeCandidates.size()) + pw::i18n::t(" 处");
             }
         }
         return msg;
     }
     std::error_code ec;
-    if (!fs::exists(config.libreOfficePath, ec)) {
-        return "LibreOffice: 路径无效 " + fsUtf8(config.libreOfficePath);
+    if (!existsLong(config.libreOfficePath)) {
+        return pw::i18n::t("LibreOffice: 路径无效 ") + fsUtf8(config.libreOfficePath);
     }
     return "LibreOffice: " + fsUtf8(config.libreOfficePath);
 }

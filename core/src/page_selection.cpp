@@ -1,4 +1,5 @@
 #include "pdfword/page_selection.hpp"
+#include "pdfword/i18n.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -53,7 +54,7 @@ Result<std::vector<int>> parsePageSpec(const std::string& spec, int pageCount) {
 
     if (trim(s).empty()) {
         return Status::error(ErrorCode::InvalidArgument,
-                             "页码范围为空，示例：1-3,5,8-10（从 1 开始、闭区间）");
+                             pw::i18n::t("页码范围为空，示例：1-3,5,8-10（从 1 开始、闭区间）"));
     }
 
     std::vector<int> pages;   // 0 基
@@ -67,7 +68,7 @@ Result<std::vector<int>> parsePageSpec(const std::string& spec, int pageCount) {
             int last = 0;
             if (dash == std::string::npos) {
                 if (!parseInt(token, &first)) {
-                    return Status::error(ErrorCode::InvalidArgument, "无法识别的页码: " + token);
+                    return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("无法识别的页码: ") + token);
                 }
                 last = first;
             } else {
@@ -77,20 +78,20 @@ Result<std::vector<int>> parsePageSpec(const std::string& spec, int pageCount) {
                 if (a.empty()) a = "1";
                 if (b.empty()) b = pageCount > 0 ? std::to_string(pageCount) : a;
                 if (!parseInt(a, &first) || !parseInt(b, &last)) {
-                    return Status::error(ErrorCode::InvalidArgument, "无法识别的页码区间: " + token);
+                    return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("无法识别的页码区间: ") + token);
                 }
             }
             if (first < 1) {
-                return Status::error(ErrorCode::InvalidArgument, "页码从 1 开始，不能是 " + std::to_string(first));
+                return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("页码从 1 开始，不能是 ") + std::to_string(first));
             }
             if (last < first) {
                 return Status::error(ErrorCode::InvalidArgument,
-                                     "区间起点大于终点: " + token);
+                                     pw::i18n::t("区间起点大于终点: ") + token);
             }
             if (pageCount > 0 && last > pageCount) {
                 return Status::error(ErrorCode::InvalidArgument,
-                                     "页码 " + std::to_string(last) + " 超出范围（本文件共 " +
-                                         std::to_string(pageCount) + " 页）");
+                                     pw::i18n::t("页码 ") + std::to_string(last) + pw::i18n::t(" 超出范围（本文件共 ") +
+                                         std::to_string(pageCount) + pw::i18n::t(" 页）"));
             }
             for (int p = first; p <= last; ++p) {
                 const int idx = p - 1;
@@ -103,7 +104,7 @@ Result<std::vector<int>> parsePageSpec(const std::string& spec, int pageCount) {
 
     if (pages.empty()) {
         return Status::error(ErrorCode::InvalidArgument,
-                             "页码范围为空，示例：1-3,5,8-10（从 1 开始、闭区间）");
+                             pw::i18n::t("页码范围为空，示例：1-3,5,8-10（从 1 开始、闭区间）"));
     }
     return pages;
 }

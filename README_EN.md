@@ -34,6 +34,30 @@ pdfword/
 > AGPL-3.0, or buy a commercial license from Artifex first.
 > See "[License and the MuPDF constraint](#license-and-the-mupdf-constraint-read-before-releasing)" at the end.
 
+## UI language (Chinese / English)
+
+The app ships with both a Chinese and an English UI. **It follows the system language by
+default**: a Chinese Windows shows Chinese, anything else shows English. You can also pin a
+language by hand, and the choice is remembered.
+
+- **Menu switch**: the rightmost top-level menu is `语言(L)` → `Language(L)` with three
+  mutually exclusive radio items: `Follow system` / `简体中文` / `English`, the active one ticked.
+  Switching **rebuilds the whole window's captions on the spot** — no restart; the file list,
+  the previewed file, the current page and the zoom level are carried over unchanged.
+- **Config file**: one line in `pdfword.ini`, `language=auto|zh|en` (`auto` means follow system;
+  `zh_CN` / `en_US` style values are accepted too). The ini is looked up as: the file named by
+  the `PW_CONFIG` environment variable > `pdfword.ini` next to the exe. The menu switch rewrites
+  only that one line and leaves the rest of the config untouched.
+- **Coverage**: not just widgets. Menus, dialogs, buttons, the status bar, the log pane, the
+  bookmark panel, plus the error/status messages produced by `core` (`PDF backend: …`,
+  `page N out of range (this file has M page(s))`, the `_edited.pdf` output-name suffix) all live
+  in the same table — so CLI and C ABI output follow the language too.
+- **Translation table**: `core/src/i18n_table.cpp` (Chinese source text → English, one
+  `{zh, en}` entry per line). Lookup is **keyed by the Chinese source text**; a miss falls back to
+  the Chinese original, so an untranslated string shows Chinese instead of going blank or crashing.
+  To add a string, wrap the Chinese literal in `pw::i18n::t("…")` (core) or `TR("…")` (ui) and
+  append one English row to the table.
+
 ## Building
 
 ```powershell
@@ -107,33 +131,62 @@ lives in `D:\Windows Kits\10\Include`; it globs `10.*` in each and takes the new
   `makeOcrEngine()` returns null and `ocr()` answers `BackendMissing` (every other PDF feature is
   unaffected).
 
-### Non-ASCII paths and filename encoding (important convention)
+### Path encoding: filenames in any language open correctly
 
-The whole pipeline speaks UTF-8 only. Anything that carries a path as `std::string` must be UTF-8:
+The whole pipeline is UTF-8, and it stays lossless **from the entry point** — if that step drops
+characters, nothing downstream can recover them:
 
-- **CLI**: on Windows `argv` arrives in the system ANSI code page (CP936 on Chinese systems,
-  CP1252 on Western ones, where a Chinese name collapses to `?`). Every argument goes through
-  `pw::ansiToUtf8()` before it reaches core.
-- **Qt**: `QString::toStdString()` returns the **local 8-bit encoding**, not UTF-8. A path must be
-  written as `pw::fsPath(QString.toUtf8().toStdString())` — this is the easiest spot to get wrong.
-- **core**: `std::string` is always UTF-8; entering `std::filesystem::path` goes through
-  `pw::fsPath()`; leaving toward logs or messages goes through `pw::fsUtf8()`
-  (see the header comment in `core/include/pdfword/path_util.hpp`).
-- **C ABI**: `pdfword.dll` promises “all strings are UTF-8” — that is written into
-  `core/capi/pdfword_c.h`.
-- **MuPDF 1.26**: the narrow-path API is `fopen` underneath and reads the name in the system ANSI
-  code page. So opening uses `fz_open_file_w` → `pdf_open_document_with_stream` (generic documents:
-  `fz_open_document_with_stream` plus the magic string); saving uses `_wfopen(..., L"wb")` +
-  `fz_new_output_with_file_ptr` + `pdf_write_document` (1.26 has no
-  `pdf_save_document_to_output`); images use `fz_open_file_w` + `fz_read_all` +
-  `fz_new_image_from_buffer`. Call `fz_close_output` before `fz_drop_output`, or MuPDF warns about a
-  dropped unclosed output and the tail bytes may never land.
-- **`fstream`**: `std::ofstream(path)` is a narrow-path call on Windows too, so `zip_writer`,
-  `office_runner` and the CLI text/image exports use `path.wstring().c_str()`.
+- **CLI**: on Windows `main(char**)` receives the system ANSI code page (CP936 on Chinese systems).
+  Any character that code page cannot express (kana, Cyrillic, Thai, emoji …) becomes `?` and the
+  conversion is **irreversible**. The CLI therefore uses `wmain`, which receives UTF-16, and converts
+  to UTF-8. Console output is switched to `SetConsoleOutputCP(CP_UTF8)` as well.
+- **Qt**: `QString::toStdString()` returns the local 8-bit encoding, not UTF-8. Paths go through
+  `pw::fsPath(QString.toUtf8().toStdString())`.
+- **core**: `std::string` is UTF-8 only; into `fs::path` via `pw::fsPath()`; out to logs via `pw::fsUtf8()`.
+- **C ABI**: `pdfword.dll` promises “all strings are UTF-8” (`core/capi/pdfword_c.h`).
+- **MuPDF 1.26**: the narrow-path API is `fopen` underneath and reads names in the system code page,
+  so it is bypassed entirely: open = `fz_open_file_w` → `pdf_open_document_with_stream` (generic:
+  `fz_open_document_with_stream` + magic); save = `_wfopen(L"wb")` + `fz_new_output_with_file_ptr` +
+  `pdf_write_document` (1.26 has no `pdf_save_document_to_output`); images = `fz_open_file_w` +
+  `fz_read_all` + `fz_new_image_from_buffer`. Call `fz_close_output` before `fz_drop_output`.
+- **`fstream`**: `std::ofstream(path)` is a narrow-path call too, so `zip_writer`, `office_runner`
+  and the CLI exports open with wide paths.
 
-This is not theoretical: `PEDOT_活神经细胞周围聚合_中文翻译.pdf` on a system with a non-Chinese
-code page reports `IoError: 文件不存在` — the file sits on the desktop, but its name was turned into
-the local code page on the way into core, so the bytes no longer matched and `fs::exists` was false.
+### Very long paths and the 255-character segment limit
+
+Chinese or Japanese filenames push a path past the 260-character `MAX_PATH` very easily. All IO
+uses `pw::fsPathLong()`, which **prepends `\\?\` once the path exceeds 240 characters** (UNC becomes
+`\\?\UNC\`) and does not depend on the system-wide `LongPathsEnabled` switch. Verified with a
+267-character path (ten Chinese-named directories plus a 150-character filename): read, write and
+render all work.
+
+Windows has a second limit that `\\?\` cannot lift: **one path segment (one file name) may hold at
+most 255 characters**. Exceeding it now reports
+`无法写文件，名称 256 字符，超过 255 或路径非法` instead of dumping a truncated, mangled path.
+(Emoji take two UTF-16 code units and blow the limit first; the reported count is UTF-16 code units.)
+
+### Special characters and LibreOffice URIs
+
+Spaces, `#`, `%`, `&`, `+`, `'`, brackets and emoji in filenames all work, because:
+
+- arguments to external processes are quoted by the MSVCRT rules (`\` only escapes inside quotes when
+  adjacent to a quote or the end, so a directory argument ending in `\\` no longer breaks the quote);
+- LibreOffice's `-env:UserInstallation` is a `file:///` URL, and every non-reserved character in the
+  path is **percent-encoded**. With a Chinese user name (`C:\\Users\\张三\\…`) or a working directory
+  containing spaces or `#`, soffice rejects an unencoded URL outright. Observed log:
+  `-env:UserInstallation=file:///D:/.../%E4%B8%AD%E6%96%87%20%E5%B7%A5%E4%BD%9C%23%E7%9B%AE%E5%BD%95/lo-profile`.
+
+### Compatibility test results (this machine, Chinese code page)
+
+| Case | Result |
+| --- | --- |
+| Japanese / Korean / Russian / Arabic / Thai / Vietnamese filenames: `info` + `extract` + `render` | 21/21 passed |
+| `emoji😀&%#+'()【】文件.pdf`, same three steps | passed |
+| 267-character deep path (ten Chinese directories + 150-char name): read / write / render | passed |
+| 256-character output segment | clear error (256 > 255) |
+| Japanese docx → pdf with a working dir containing Chinese, spaces and `#` | passed, 436 KB |
+| `emoji😀&%#+'` docx → pdf | passed, 443 KB |
+| UI smoke with a Japanese-named PDF | `failures=0`, 26 screenshots |
 
 ### Locating LibreOffice (the prerequisite for docx ⇄ pdf)
 
@@ -364,7 +417,7 @@ selects it first):
 | Edit & Annotate(&E) | Edit text & images… / Annotations… / Add hyperlink… / Find & replace… / Forms… | See "Edit & Annotate menu items" below |
 | View(&V) | **Two-level submenus**: `File list ▸` (show / hide ‖ left / right) + `Log window ▸` (show / hide) + `Bookmarks ▸` (show / hide) + `Zoom ▸` (zoom in / zoom out ‖ fit width / fit window / actual size 100%) | Panel visibility and dock side (you can also drag the panel out into a floating window); log visibility; bookmark panel visibility; zoom and fit |
 | Help(&H) | Capability report | Shows backend / LibreOffice / OCR diagnostics (the LibreOffice version comes from the cache; before the first conversion it says "not detected") |
-| Help(&H) | About Pdf-Toolkit… | Short description + version (taken from `project(Pdf-Toolkit VERSION …)`, currently 0.0.1) + contact / e-mail (the e-mail is a link that opens the default mail client) |
+| Help(&H) | About Pdf-Toolkit… | Short description + version (taken from `project(Pdf-Toolkit VERSION …)`, currently 0.0.2) + contact / e-mail (the e-mail is a link that opens the default mail client) |
 
 **PDF Tools menu items**
 
@@ -581,7 +634,7 @@ Details:
 - Silent install into a given directory (for self-testing):
 
   ```powershell
-  .\dist\Pdf-Toolkit-0.0.1-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
+  .\dist\Pdf-Toolkit-0.0.2-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
   ```
 
 ## Current status (what really works and what does not)

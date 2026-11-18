@@ -3,6 +3,7 @@
 // 正好用来把文字写回 PDF 做不可见文字层。
 // 编译依赖：Windows 10 SDK 自带的 cppwinrt 头文件 + WindowsApp.lib（CMake 里已配）。
 #include "pdfword/ocr.hpp"
+#include "pdfword/i18n.hpp"
 
 #include <algorithm>
 #include <string>
@@ -61,7 +62,7 @@ public:
     }
 
     std::string unavailableReason() const override {
-        return "系统没有可用的 OCR 语言包（设置 → 时间和语言 → 语言 → 中文(简体) 的“光学字符识别”组件）";
+        return pw::i18n::t("系统没有可用的 OCR 语言包（设置 → 时间和语言 → 语言 → 中文(简体) 的“光学字符识别”组件）");
     }
 
     std::vector<std::string> languages() const override {
@@ -78,8 +79,8 @@ public:
 
     Status recognize(const RasterImage& image, double pageWidthPt, double pageHeightPt,
                      const std::string& language, OcrPageResult* out) override {
-        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, "out 为空");
-        if (image.empty()) return Status::error(ErrorCode::InvalidArgument, "页面位图为空");
+        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("out 为空"));
+        if (image.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("页面位图为空"));
         ensureApartment();
 
         try {
@@ -88,13 +89,13 @@ public:
                 engine = wocr::OcrEngine::TryCreateFromLanguage(wgl::Language(winrt::to_hstring(language)));
                 if (!engine) {
                     return Status::error(ErrorCode::Unsupported,
-                                         "系统没有安装 " + language + " 的 OCR 语言包");
+                                         pw::i18n::t("系统没有安装 ") + language + pw::i18n::t(" 的 OCR 语言包"));
                 }
             }
             if (!engine) engine = wocr::OcrEngine::TryCreateFromUserProfileLanguages();
             if (!engine) {
                 return Status::error(ErrorCode::Unsupported,
-                                     "系统没有可用的 OCR 语言包（设置里给中文(简体)装上“光学字符识别”）");
+                                     pw::i18n::t("系统没有可用的 OCR 语言包（设置里给中文(简体)装上“光学字符识别”）"));
             }
 
             // Windows OCR 要 BGRA8；我们的栅格是 RGBA8888，逐像素换一下通道
@@ -156,9 +157,9 @@ public:
             }
             return Status::success();
         } catch (winrt::hresult_error const& e) {
-            return Status::error(ErrorCode::ProcessFailed, "Windows OCR 失败: " + hstringToUtf8(e.message()));
+            return Status::error(ErrorCode::ProcessFailed, pw::i18n::t("Windows OCR 失败: ") + hstringToUtf8(e.message()));
         } catch (std::exception const& e) {
-            return Status::error(ErrorCode::Internal, std::string("Windows OCR 失败: ") + e.what());
+            return Status::error(ErrorCode::Internal, std::string(pw::i18n::t("Windows OCR 失败: ")) + e.what());
         }
     }
 
@@ -183,13 +184,13 @@ std::shared_ptr<IOcrEngine> makeOcrEngine() {
 
 std::string ocrCapabilityReport() {
     auto engine = std::make_shared<WindowsOcrEngine>();
-    if (!engine->available()) return "OCR 不可用：" + engine->unavailableReason();
+    if (!engine->available()) return pw::i18n::t("OCR 不可用：") + engine->unavailableReason();
     std::string langs;
     for (const std::string& tag : engine->languages()) {
         if (!langs.empty()) langs += ", ";
         langs += tag;
     }
-    return "Windows OCR（可用）：语言 " + langs;
+    return pw::i18n::t("Windows OCR（可用）：语言 ") + langs;
 }
 
 }  // namespace pw
@@ -200,7 +201,7 @@ namespace pw {
 
 std::shared_ptr<IOcrEngine> makeOcrEngine() { return nullptr; }
 
-std::string ocrCapabilityReport() { return "OCR 不可用：当前平台没有接入 OCR 引擎"; }
+std::string ocrCapabilityReport() { return pw::i18n::t("OCR 不可用：当前平台没有接入 OCR 引擎"); }
 
 }  // namespace pw
 

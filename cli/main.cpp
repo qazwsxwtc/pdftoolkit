@@ -127,7 +127,7 @@ Status writeBmp(const RasterImage& image, const fs::path& path) {
     }
 
     #ifdef _WIN32
-        std::ofstream out(path.wstring().c_str(), std::ios::binary | std::ios::trunc);
+        std::ofstream out(fsPathLong(path).wstring().c_str(), std::ios::binary | std::ios::trunc);
 #else
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
 #endif
@@ -1046,7 +1046,7 @@ int cmdOutline(const std::vector<std::string>& args) {
     }
     if (!txtOut.empty()) {
         #ifdef _WIN32
-    std::ofstream out(fsPath(txtOut).wstring().c_str(), std::ios::binary);
+    std::ofstream out(fsPathLong(fsPath(txtOut)).wstring().c_str(), std::ios::binary);
 #else
     std::ofstream out(txtOut.c_str(), std::ios::binary);
 #endif
@@ -1078,7 +1078,7 @@ int cmdSetOutline(const std::vector<std::string>& args) {
     }
     if (!fromFile.empty()) {
         #ifdef _WIN32
-    std::ifstream in(fsPath(fromFile).wstring().c_str(), std::ios::binary);
+    std::ifstream in(fsPathLong(fsPath(fromFile)).wstring().c_str(), std::ios::binary);
 #else
     std::ifstream in(fromFile.c_str(), std::ios::binary);
 #endif
@@ -1123,17 +1123,27 @@ int cmdSetOutline(const std::vector<std::string>& args) {
 }
 
 // 前置声明：main 里调用，实现放在 main 之后
-int dispatch(const std::string& cmd, std::vector<std::string>& args);int main(int argc, char** argv) {
-    gSelf = fs::absolute(fsPath(ansiToUtf8(argv[0])));
+int dispatch(const std::string& cmd, std::vector<std::string>& args);
 
-    if (argc < 2) {
+// 参数统一成 UTF-8 之后再进 core。
+// Windows 上绝不能走 main(char**) —— 那条路拿到的是本地代码页（中文系统 CP936），
+// 文件名里只要有该代码页表示不了的字符（日文假名、西里尔字母、emoji…）就会变成 '?'，
+// 而且不可逆。wmain 拿到的是 UTF-16，转 UTF-8 无损，任何语言的路径都能开。
+static int runMain(const std::vector<std::string>& argv) {
+    if (argv.empty()) {
+        printUsage();
+        return 1;
+    }
+    gSelf = fs::absolute(fsPath(argv[0]));
+
+    if (argv.size() < 2) {
         printUsage();
         return 1;
     }
 
-    std::string cmd = ansiToUtf8(argv[1]);
+    std::string cmd = argv[1];
     std::vector<std::string> args;
-    for (int i = 2; i < argc; ++i) args.emplace_back(ansiToUtf8(argv[i]));
+    for (std::size_t i = 2; i < argv.size(); ++i) args.emplace_back(argv[i]);
 
     // --password 对所有命令通用：先摘出来，剩余参数按原位置语义分派
     for (std::size_t i = 0; i + 1 < args.size();) {
@@ -1154,6 +1164,23 @@ int dispatch(const std::string& cmd, std::vector<std::string>& args);int main(in
         return 2;
     }
 }
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t** wargv) {
+    enableUtf8Console();  // cmd 默认是本地代码页，中文/日文输出会乱码
+    std::vector<std::string> argv;
+    argv.reserve(static_cast<std::size_t>(argc));
+    for (int i = 0; i < argc; ++i) argv.push_back(wideToUtf8(std::wstring(wargv[i])));
+    return runMain(argv);
+}
+#else
+int main(int argc, char** argv) {
+    std::vector<std::string> a;
+    a.reserve(static_cast<std::size_t>(argc));
+    for (int i = 0; i < argc; ++i) a.push_back(argv[i]);
+    return runMain(a);
+}
+#endif
 
 // 具体命令分派：抽出来是为了让 main 只负责参数清洗与异常兜底
 int dispatch(const std::string& cmd, std::vector<std::string>& args) {

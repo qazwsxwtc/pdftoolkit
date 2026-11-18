@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "pdfword/converter.hpp"
+#include "pdfword/i18n.hpp"
 #include "pdfword/job.hpp"
 
 class QAction;
@@ -48,6 +49,18 @@ public:
     // 冒烟用：走真实"选了动作 → 拖框 → 写回"的全链路，只是不弹输入框（文字由参数给）
     void previewInlineEditForTest(int action, int page, const QRectF& rect, const QString& text);
 
+    // 换界面语言时要把"用户正在看的东西"带到新窗口：文件列表、选中项、预览的文件与页码缩放。
+    // 界面文本都是在构造时算好的，重开一个窗口是最干净的换语言方式（也不会漏掉任何控件）。
+    struct Session {
+        QStringList files;
+        QString previewPath;
+        QString selectedPath;
+        int page = 1;
+        double zoom = 0.0;
+    };
+    Session captureSession() const;
+    void applySession(const Session& session);
+
 private slots:
     void addFiles();
     void removeSelected();
@@ -72,6 +85,8 @@ private slots:
     void openForm();
     void showCapabilityReport();
     void showAboutDialog();
+    // 界面语言：跟随系统 / 简体中文 / English。切换后立刻生效（整窗重建，会话搬过去）。
+    void switchLanguage(pw::i18n::Lang lang);
     // ---- 预览里"就地编辑"：右键选动作 → 在页面上拖一下 → 直接写回并刷新预览 ----
     void showPreviewMenu(int page, const QPoint& globalPos);
     void startInlineEdit(int action);

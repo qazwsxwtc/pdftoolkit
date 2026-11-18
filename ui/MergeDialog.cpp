@@ -1,4 +1,5 @@
 #include "MergeDialog.h"
+#include "I18nUi.h"
 
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
@@ -19,11 +20,11 @@ const char* kPathKey = "pdfPath";
 }
 
 MergeDialog::MergeDialog(const QStringList& candidates, QWidget* parent) : QDialog(parent) {
-    setWindowTitle(QStringLiteral("合并 PDF — 选择要合并的文件"));
+    setWindowTitle(TR("合并 PDF — 选择要合并的文件"));
     resize(560, 460);
 
     auto* root = new QVBoxLayout(this);
-    root->addWidget(new QLabel(QStringLiteral("待合并的文件（按列表顺序拼接，越靠上越前；可拖入 PDF）："), this));
+    root->addWidget(new QLabel(TR("待合并的文件（按列表顺序拼接，越靠上越前；可拖入 PDF）："), this));
 
     // 支持把 PDF 从资源管理器直接拖进列表
     auto* dropList = new DropListWidget(this);
@@ -34,10 +35,10 @@ MergeDialog::MergeDialog(const QStringList& candidates, QWidget* parent) : QDial
     root->addWidget(list_, 1);
 
     auto* fileRow = new QHBoxLayout();
-    auto* addBtn = new QPushButton(QStringLiteral("添加 PDF…"), this);
-    auto* removeBtn = new QPushButton(QStringLiteral("移除选中"), this);
-    auto* upBtn = new QPushButton(QStringLiteral("上移"), this);
-    auto* downBtn = new QPushButton(QStringLiteral("下移"), this);
+    auto* addBtn = new QPushButton(TR("添加 PDF…"), this);
+    auto* removeBtn = new QPushButton(TR("移除选中"), this);
+    auto* upBtn = new QPushButton(TR("上移"), this);
+    auto* downBtn = new QPushButton(TR("下移"), this);
     fileRow->addWidget(addBtn);
     fileRow->addWidget(removeBtn);
     fileRow->addWidget(upBtn);
@@ -46,16 +47,16 @@ MergeDialog::MergeDialog(const QStringList& candidates, QWidget* parent) : QDial
     root->addLayout(fileRow);
 
     auto* outRow = new QHBoxLayout();
-    outRow->addWidget(new QLabel(QStringLiteral("输出文件"), this));
+    outRow->addWidget(new QLabel(TR("输出文件"), this));
     output_ = new QLineEdit(this);
     output_->setObjectName(QStringLiteral("mergeOutput"));
-    auto* browseBtn = new QPushButton(QStringLiteral("浏览…"), this);
+    auto* browseBtn = new QPushButton(TR("浏览…"), this);
     outRow->addWidget(output_, 1);
     outRow->addWidget(browseBtn);
     root->addLayout(outRow);
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    box->button(QDialogButtonBox::Ok)->setText(QStringLiteral("合并"));
+    box->button(QDialogButtonBox::Ok)->setText(TR("合并"));
     root->addWidget(box);
 
     for (const auto& path : candidates) appendFile(path);
@@ -73,13 +74,13 @@ MergeDialog::MergeDialog(const QStringList& candidates, QWidget* parent) : QDial
     connect(browseBtn, &QPushButton::clicked, this, &MergeDialog::pickOutput);
     connect(box, &QDialogButtonBox::accepted, this, [this] {
         if (list_->count() < 2) {
-            QMessageBox::information(this, QStringLiteral("至少两个文件"),
-                                     QStringLiteral("合并至少需要 2 个 PDF 文件"));
+            QMessageBox::information(this, TR("至少两个文件"),
+                                     TR("合并至少需要 2 个 PDF 文件"));
             return;
         }
         if (output_->text().trimmed().isEmpty()) {
-            QMessageBox::information(this, QStringLiteral("需要输出路径"),
-                                     QStringLiteral("请先指定合并后的输出文件"));
+            QMessageBox::information(this, TR("需要输出路径"),
+                                     TR("请先指定合并后的输出文件"));
             return;
         }
         accept();
@@ -104,7 +105,7 @@ void MergeDialog::addFiles() {
                             ? QFileInfo(list_->item(list_->count() - 1)->data(Qt::UserRole).toString()).absolutePath()
                             : QString();
     const QStringList picked = QFileDialog::getOpenFileNames(
-        this, QStringLiteral("添加要合并的 PDF"), dir, QStringLiteral("PDF (*.pdf)"));
+        this, TR("添加要合并的 PDF"), dir, QStringLiteral("PDF (*.pdf)"));
     for (const auto& p : picked) appendFile(p);
     if (output_->text().trimmed().isEmpty() && list_->count() > 0) output_->setText(suggestOutput());
 }
@@ -135,7 +136,7 @@ void MergeDialog::moveDown() {
 
 void MergeDialog::pickOutput() {
     const QString suggested = output_->text().trimmed().isEmpty() ? suggestOutput() : output_->text();
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("合并输出文件"), suggested,
+    const QString out = QFileDialog::getSaveFileName(this, TR("合并输出文件"), suggested,
                                                      QStringLiteral("PDF (*.pdf)"));
     if (!out.isEmpty()) output_->setText(out);
 }
@@ -144,8 +145,8 @@ QString MergeDialog::suggestOutput() const {
     if (list_->count() == 0) return QString();
     const QFileInfo first(list_->item(0)->data(Qt::UserRole).toString());
     QString base = first.absolutePath() + QLatin1Char('/') + first.completeBaseName();
-    if (list_->count() > 1) base += QStringLiteral("_等%1个").arg(list_->count());
-    return base + QStringLiteral("_合并.pdf");
+    if (list_->count() > 1) base += TR("_等%1个").arg(list_->count());
+    return base + TR("_合并.pdf");
 }
 
 QStringList MergeDialog::files() const {

@@ -1,4 +1,5 @@
 #include "MetadataDialog.h"
+#include "I18nUi.h"
 
 #include <filesystem>
 
@@ -19,11 +20,11 @@
 MetadataDialog::MetadataDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                                QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source) {
-    setWindowTitle(QStringLiteral("元数据 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("元数据 — %1").arg(QFileInfo(source_).fileName()));
     resize(540, 300);
 
     auto* root = new QVBoxLayout(this);
-    root->addWidget(new QLabel(QStringLiteral("改完点“写入并另存为…”，源文件不会被改动。"), this));
+    root->addWidget(new QLabel(TR("改完点“写入并另存为…”，源文件不会被改动。"), this));
 
     auto* form = new QFormLayout();
     title_ = new QLineEdit(this);
@@ -34,15 +35,15 @@ MetadataDialog::MetadataDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
     author_->setObjectName(QStringLiteral("metaAuthor"));
     subject_->setObjectName(QStringLiteral("metaSubject"));
     keywords_->setObjectName(QStringLiteral("metaKeywords"));
-    form->addRow(QStringLiteral("标题"), title_);
-    form->addRow(QStringLiteral("作者"), author_);
-    form->addRow(QStringLiteral("主题"), subject_);
-    form->addRow(QStringLiteral("关键词"), keywords_);
+    form->addRow(TR("标题"), title_);
+    form->addRow(TR("作者"), author_);
+    form->addRow(TR("主题"), subject_);
+    form->addRow(TR("关键词"), keywords_);
     root->addLayout(form);
 
     auto* row = new QHBoxLayout();
-    auto* loadBtn = new QPushButton(QStringLiteral("读取当前"), this);
-    auto* saveBtn = new QPushButton(QStringLiteral("写入并另存为…"), this);
+    auto* loadBtn = new QPushButton(TR("读取当前"), this);
+    auto* saveBtn = new QPushButton(TR("写入并另存为…"), this);
     row->addWidget(loadBtn);
     row->addWidget(saveBtn);
     row->addStretch(1);
@@ -51,7 +52,7 @@ MetadataDialog::MetadataDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
     // Qt 自带中文翻译没加载时按钮会显示英文 Close，这里统一成手写文案
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(loadBtn, &QPushButton::clicked, this, &MetadataDialog::loadFromFile);
@@ -64,7 +65,7 @@ MetadataDialog::MetadataDialog(std::shared_ptr<pw::IPdfBackend> backend, const Q
 void MetadataDialog::loadFromFile() {
     auto meta = backend_->metadata(pw::fsPath(source_.toUtf8().toStdString()), std::string());
     if (!meta.ok()) {
-        emit logMessage(QStringLiteral("读取元数据失败: ") + QString::fromStdString(meta.status().toString()));
+        emit logMessage(TR("读取元数据失败: ") + QString::fromStdString(meta.status().toString()));
         return;
     }
     title_->setText(QString::fromStdString(meta.value().title));
@@ -74,8 +75,8 @@ void MetadataDialog::loadFromFile() {
 }
 
 void MetadataDialog::saveAs() {
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("元数据输出"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_元数据")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("元数据输出"),
+                                                     suggestPdfOutput(source_, TR("_元数据")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -88,8 +89,8 @@ void MetadataDialog::saveAs() {
     const pw::Status st = backend_->setMetadata(pw::fsPath(source_.toUtf8().toStdString()),
                                                 pw::fsPath(out.toUtf8().toStdString()), meta);
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("写入失败"), QString::fromStdString(st.toString()));
+        QMessageBox::warning(this, TR("写入失败"), QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("元数据已写入 -> ") + out);
+    emit logMessage(TR("元数据已写入 -> ") + out);
 }

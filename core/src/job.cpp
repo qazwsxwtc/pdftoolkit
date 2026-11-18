@@ -1,4 +1,5 @@
 #include "pdfword/job.hpp"
+#include "pdfword/i18n.hpp"
 
 #include <utility>
 #include "pdfword/path_util.hpp"
@@ -35,7 +36,7 @@ int JobQueue::enqueue(const fs::path& source, const fs::path& output, const std:
         info.output = output;
         info.target = target;
         info.state = JobState::Pending;
-        info.message = "排队中";
+        info.message = pw::i18n::t("排队中");
         info.password = password;
         jobs_[id] = info;
         pending_.push_back(id);
@@ -56,7 +57,7 @@ void JobQueue::cancel(int jobId) {
         if (it->second.state == JobState::Pending) {
             cancelled_.insert(jobId);
             it->second.state = JobState::Cancelled;
-            it->second.message = "已取消";
+            it->second.message = pw::i18n::t("已取消");
             copy = it->second;
             hasCopy = true;
         }
@@ -72,7 +73,7 @@ void JobQueue::cancelAll() {
             if (kv.second.state == JobState::Pending) {
                 cancelled_.insert(kv.first);
                 kv.second.state = JobState::Cancelled;
-                kv.second.message = "已取消";
+                kv.second.message = pw::i18n::t("已取消");
                 copies.push_back(kv.second);
             }
         }
@@ -124,7 +125,7 @@ void JobQueue::workerLoop() {
 
             if (cancelled_.count(id) != 0) {
                 it->second.state = JobState::Cancelled;
-                it->second.message = "已取消";
+                it->second.message = pw::i18n::t("已取消");
                 JobInfo copy = it->second;
                 lock.unlock();
                 notify(copy);
@@ -134,7 +135,7 @@ void JobQueue::workerLoop() {
 
             it->second.state = JobState::Running;
             it->second.progress = 0;
-            it->second.message = "开始转换";
+            it->second.message = pw::i18n::t("转换中");
             source = it->second.source;
             output = it->second.output;
             target = it->second.target;
@@ -164,7 +165,7 @@ void JobQueue::workerLoop() {
 
         fs::path produced;
         Status st = converter_ ? converter_->convert(source, options, target, &produced)
-                               : Status::error(ErrorCode::Internal, "Converter 为空");
+                               : Status::error(ErrorCode::Internal, pw::i18n::t("Converter 为空"));
 
         JobInfo finished;
         {
@@ -174,7 +175,7 @@ void JobQueue::workerLoop() {
                 if (st.ok()) {
                     it->second.state = JobState::Done;
                     it->second.progress = 100;
-                    it->second.message = "完成: " + fsUtf8(produced);
+                    it->second.message = pw::i18n::t("完成: ") + fsUtf8(produced);
                 } else {
                     it->second.state = JobState::Failed;
                     it->second.message = st.toString();

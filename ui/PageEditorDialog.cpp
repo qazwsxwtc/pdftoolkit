@@ -1,4 +1,5 @@
 #include "PageEditorDialog.h"
+#include "I18nUi.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -36,16 +37,16 @@ std::shared_ptr<pw::IPdfDocument> openWithPassword(const std::shared_ptr<pw::IPd
         if (doc.ok()) return doc.value();
 
         const std::string msg = doc.status().toString();
-        if (QString::fromStdString(msg).contains(QStringLiteral("密码"))) {
+        if (QString::fromStdString(msg).contains(TR("密码"))) {
             bool ok = false;
-            const QString input = QInputDialog::getText(parent, QStringLiteral("需要密码"),
-                                                        QStringLiteral("这个 PDF 已加密，请输入打开密码："),
+            const QString input = QInputDialog::getText(parent, TR("需要密码"),
+                                                        TR("这个 PDF 已加密，请输入打开密码："),
                                                         QLineEdit::Password, *password, &ok);
             if (!ok) return nullptr;
             *password = input;
             continue;
         }
-        QMessageBox::warning(parent, QStringLiteral("打开失败"), QString::fromStdString(msg));
+        QMessageBox::warning(parent, TR("打开失败"), QString::fromStdString(msg));
         return nullptr;
     }
     return nullptr;
@@ -57,7 +58,7 @@ PageEditorDialog::PageEditorDialog(std::shared_ptr<pw::IPdfBackend> backend, con
                                    std::shared_ptr<pw::IPdfDocument> document,
                                    const QString& password, QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source), password_(password) {
-    setWindowTitle(QStringLiteral("页面编辑 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("页面编辑 — %1").arg(QFileInfo(source_).fileName()));
     resize(820, 620);
 
     std::shared_ptr<pw::IPdfDocument> doc = document;
@@ -80,7 +81,7 @@ PageEditorDialog::PageEditorDialog(std::shared_ptr<pw::IPdfBackend> backend, con
 
     // ---- 左：输出页列表 ----
     auto* left = new QVBoxLayout();
-    left->addWidget(new QLabel(QStringLiteral("输出页顺序（可多选；这里是最终 PDF 的页序列）"), this));
+    left->addWidget(new QLabel(TR("输出页顺序（可多选；这里是最终 PDF 的页序列）"), this));
     list_ = new QListWidget(this);
     list_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     left->addWidget(list_, 1);
@@ -92,13 +93,13 @@ PageEditorDialog::PageEditorDialog(std::shared_ptr<pw::IPdfBackend> backend, con
     // ---- 右：操作区 ----
     auto* right = new QVBoxLayout();
 
-    auto* moveBox = new QGroupBox(QStringLiteral("顺序"), this);
+    auto* moveBox = new QGroupBox(TR("顺序"), this);
     auto* moveGrid = new QHBoxLayout(moveBox);
-    auto* upBtn = new QPushButton(QStringLiteral("上移"), moveBox);
-    auto* downBtn = new QPushButton(QStringLiteral("下移"), moveBox);
-    auto* topBtn = new QPushButton(QStringLiteral("置顶"), moveBox);
-    auto* bottomBtn = new QPushButton(QStringLiteral("置底"), moveBox);
-    auto* delBtn = new QPushButton(QStringLiteral("删除选中"), moveBox);
+    auto* upBtn = new QPushButton(TR("上移"), moveBox);
+    auto* downBtn = new QPushButton(TR("下移"), moveBox);
+    auto* topBtn = new QPushButton(TR("置顶"), moveBox);
+    auto* bottomBtn = new QPushButton(TR("置底"), moveBox);
+    auto* delBtn = new QPushButton(TR("删除选中"), moveBox);
     moveGrid->addWidget(upBtn);
     moveGrid->addWidget(downBtn);
     moveGrid->addWidget(topBtn);
@@ -106,7 +107,7 @@ PageEditorDialog::PageEditorDialog(std::shared_ptr<pw::IPdfBackend> backend, con
     moveGrid->addWidget(delBtn);
     right->addWidget(moveBox);
 
-    auto* rotBox = new QGroupBox(QStringLiteral("旋转选中页"), this);
+    auto* rotBox = new QGroupBox(TR("旋转选中页"), this);
     auto* rotGrid = new QHBoxLayout(rotBox);
     auto* rot90 = new QPushButton(QStringLiteral("+90°"), rotBox);
     auto* rot180 = new QPushButton(QStringLiteral("180°"), rotBox);
@@ -118,7 +119,7 @@ PageEditorDialog::PageEditorDialog(std::shared_ptr<pw::IPdfBackend> backend, con
     rotGrid->addWidget(rotMinus);
     right->addWidget(rotBox);
 
-    auto* cropBox = new QGroupBox(QStringLiteral("裁剪选中页（从各边裁掉多少 pt，1pt≈0.35mm）"), this);
+    auto* cropBox = new QGroupBox(TR("裁剪选中页（从各边裁掉多少 pt，1pt≈0.35mm）"), this);
     auto* cropForm = new QFormLayout(cropBox);
     cropLeft_ = new QDoubleSpinBox(cropBox);
     cropBottom_ = new QDoubleSpinBox(cropBox);
@@ -129,31 +130,31 @@ PageEditorDialog::PageEditorDialog(std::shared_ptr<pw::IPdfBackend> backend, con
         spin->setDecimals(1);
         spin->setSingleStep(5.0);
     }
-    cropForm->addRow(QStringLiteral("左"), cropLeft_);
-    cropForm->addRow(QStringLiteral("下"), cropBottom_);
-    cropForm->addRow(QStringLiteral("右"), cropRight_);
-    cropForm->addRow(QStringLiteral("上"), cropTop_);
-    auto* cropBtn = new QPushButton(QStringLiteral("应用到选中页"), cropBox);
+    cropForm->addRow(TR("左"), cropLeft_);
+    cropForm->addRow(TR("下"), cropBottom_);
+    cropForm->addRow(TR("右"), cropRight_);
+    cropForm->addRow(TR("上"), cropTop_);
+    auto* cropBtn = new QPushButton(TR("应用到选中页"), cropBox);
     cropForm->addRow(cropBtn);
-    auto* cropClearBtn = new QPushButton(QStringLiteral("取消选中页的裁剪"), cropBox);
+    auto* cropClearBtn = new QPushButton(TR("取消选中页的裁剪"), cropBox);
     cropForm->addRow(cropClearBtn);
     right->addWidget(cropBox);
 
-    auto* insertBox = new QGroupBox(QStringLiteral("插入"), this);
+    auto* insertBox = new QGroupBox(TR("插入"), this);
     auto* insertForm = new QFormLayout(insertBox);
     blankCount_ = new QSpinBox(insertBox);
     blankCount_->setRange(1, 100);
-    auto* blankBtn = new QPushButton(QStringLiteral("在选中页之后插入空白页"), insertBox);
-    insertForm->addRow(QStringLiteral("空白页数量"), blankCount_);
+    auto* blankBtn = new QPushButton(TR("在选中页之后插入空白页"), insertBox);
+    insertForm->addRow(TR("空白页数量"), blankCount_);
     insertForm->addRow(blankBtn);
-    auto* insertPdfBtn = new QPushButton(QStringLiteral("插入其他 PDF 的页面…"), insertBox);
+    auto* insertPdfBtn = new QPushButton(TR("插入其他 PDF 的页面…"), insertBox);
     insertForm->addRow(insertPdfBtn);
     right->addWidget(insertBox);
 
     right->addStretch(1);
 
-    auto* closeBtn = new QPushButton(QStringLiteral("关闭"), this);
-    auto* saveBtn = new QPushButton(QStringLiteral("另存为…"), this);
+    auto* closeBtn = new QPushButton(TR("关闭"), this);
+    auto* saveBtn = new QPushButton(TR("另存为…"), this);
     saveBtn->setDefault(true);
     auto* bottomRow = new QHBoxLayout();
     bottomRow->addWidget(closeBtn);
@@ -199,19 +200,19 @@ std::vector<int> PageEditorDialog::selectedRows() const {
 QString PageEditorDialog::describe(const pw::PageRef& ref, int index) const {
     QString text = QStringLiteral("%1. ").arg(index + 1);
     if (ref.source.empty()) {
-        text += QStringLiteral("[空白页 %1×%2pt]")
+        text += TR("[空白页 %1×%2pt]")
                     .arg(ref.blankWidthPt, 0, 'f', 0)
                     .arg(ref.blankHeightPt, 0, 'f', 0);
         return text;
     }
 
     const QString file = QFileInfo(QString::fromStdString(ref.source.string())).fileName();
-    text += QStringLiteral("原第 %1 页（%2）").arg(ref.pageIndex + 1).arg(file);
+    text += TR("原第 %1 页（%2）").arg(ref.pageIndex + 1).arg(file);
 
     const int rot = ((ref.rotateDelta % 360) + 360) % 360;
-    if (rot != 0) text += QStringLiteral(" 旋转%1°").arg(rot);
+    if (rot != 0) text += TR(" 旋转%1°").arg(rot);
     if (ref.hasCrop) {
-        text += QStringLiteral(" 裁剪 L%1 B%2 R%3 T%4")
+        text += TR(" 裁剪 L%1 B%2 R%3 T%4")
                     .arg(ref.cropLeft, 0, 'f', 1)
                     .arg(ref.cropBottom, 0, 'f', 1)
                     .arg(ref.cropRight, 0, 'f', 1)
@@ -237,7 +238,7 @@ void PageEditorDialog::refreshSummary() {
         if (((ref.rotateDelta % 360) + 360) % 360 != 0) ++rotated;
         if (ref.hasCrop) ++cropped;
     }
-    summary_->setText(QStringLiteral("共 %1 页｜空白页 %2｜旋转 %3｜裁剪 %4")
+    summary_->setText(TR("共 %1 页｜空白页 %2｜旋转 %3｜裁剪 %4")
                           .arg(pages_.size())
                           .arg(blanks)
                           .arg(rotated)
@@ -248,7 +249,7 @@ void PageEditorDialog::deleteSelected() {
     auto rows = selectedRows();
     if (rows.empty()) return;
     if (static_cast<int>(rows.size()) == static_cast<int>(pages_.size())) {
-        QMessageBox::information(this, QStringLiteral("不能全删"), QStringLiteral("至少保留一页"));
+        QMessageBox::information(this, TR("不能全删"), TR("至少保留一页"));
         return;
     }
     for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
@@ -302,8 +303,8 @@ void PageEditorDialog::moveToBottom() {
 void PageEditorDialog::rotate(int degrees) {
     auto rows = selectedRows();
     if (rows.empty()) {
-        QMessageBox::information(this, QStringLiteral("未选中页面"),
-                                 QStringLiteral("先在左边列表里选中要旋转的页"));
+        QMessageBox::information(this, TR("未选中页面"),
+                                 TR("先在左边列表里选中要旋转的页"));
         return;
     }
     for (int r : rows) pages_[static_cast<std::size_t>(r)].rotateDelta += degrees;
@@ -313,8 +314,8 @@ void PageEditorDialog::rotate(int degrees) {
 void PageEditorDialog::applyCrop() {
     auto rows = selectedRows();
     if (rows.empty()) {
-        QMessageBox::information(this, QStringLiteral("未选中页面"),
-                                 QStringLiteral("先在左边列表里选中要裁剪的页"));
+        QMessageBox::information(this, TR("未选中页面"),
+                                 TR("先在左边列表里选中要裁剪的页"));
         return;
     }
     for (int r : rows) {
@@ -342,7 +343,7 @@ void PageEditorDialog::insertBlank() {
 }
 
 void PageEditorDialog::insertOtherPdf() {
-    const QString other = QFileDialog::getOpenFileName(this, QStringLiteral("选择要插入的 PDF"),
+    const QString other = QFileDialog::getOpenFileName(this, TR("选择要插入的 PDF"),
                                                        QFileInfo(source_).absolutePath(),
                                                        QStringLiteral("PDF (*.pdf)"));
     if (other.isEmpty()) return;
@@ -352,8 +353,8 @@ void PageEditorDialog::insertOtherPdf() {
     const int otherPages = otherDoc->info().pageCount;
 
     bool ok = false;
-    const QString spec = QInputDialog::getText(this, QStringLiteral("插入哪些页"),
-                                               QStringLiteral("页码范围（共 %1 页，空=全部）：").arg(otherPages),
+    const QString spec = QInputDialog::getText(this, TR("插入哪些页"),
+                                               TR("页码范围（共 %1 页，空=全部）：").arg(otherPages),
                                                QLineEdit::Normal,
                                                (otherPages <= 20) ? QStringLiteral("1-%1").arg(otherPages) : QString(),
                                                &ok);
@@ -361,7 +362,7 @@ void PageEditorDialog::insertOtherPdf() {
 
     auto pages = pw::parsePageSpec(spec.toStdString(), otherPages);
     if (!pages.ok()) {
-        QMessageBox::warning(this, QStringLiteral("页码范围无效"),
+        QMessageBox::warning(this, TR("页码范围无效"),
                              QString::fromStdString(pages.status().toString()));
         return;
     }
@@ -381,15 +382,15 @@ void PageEditorDialog::insertOtherPdf() {
 
 QString PageEditorDialog::suggestOutput() const {
     const QFileInfo fi(source_);
-    return fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName() + QStringLiteral("_编辑.pdf");
+    return fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName() + TR("_编辑.pdf");
 }
 
 void PageEditorDialog::saveAs() {
     if (pages_.empty()) {
-        QMessageBox::warning(this, QStringLiteral("没有页面"), QStringLiteral("输出至少需要一页"));
+        QMessageBox::warning(this, TR("没有页面"), TR("输出至少需要一页"));
         return;
     }
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("保存编辑结果"),
+    const QString out = QFileDialog::getSaveFileName(this, TR("保存编辑结果"),
                                                      suggestOutput(), QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -398,10 +399,10 @@ void PageEditorDialog::saveAs() {
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("保存失败"), QString::fromStdString(st.toString()));
-        emit logMessage(QStringLiteral("页面编辑失败: ") + QString::fromStdString(st.toString()));
+        QMessageBox::warning(this, TR("保存失败"), QString::fromStdString(st.toString()));
+        emit logMessage(TR("页面编辑失败: ") + QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("页面编辑完成：%1 页 -> %2").arg(pages_.size()).arg(out));
+    emit logMessage(TR("页面编辑完成：%1 页 -> %2").arg(pages_.size()).arg(out));
     accept();
 }

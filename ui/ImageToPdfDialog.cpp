@@ -1,4 +1,5 @@
 #include "ImageToPdfDialog.h"
+#include "I18nUi.h"
 
 #include <filesystem>
 #include <vector>
@@ -23,11 +24,11 @@
 ImageToPdfDialog::ImageToPdfDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& suggestedDir,
                                    QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), dir_(suggestedDir) {
-    setWindowTitle(QStringLiteral("图片转 PDF"));
+    setWindowTitle(TR("图片转 PDF"));
     resize(640, 460);
 
     auto* root = new QVBoxLayout(this);
-    root->addWidget(new QLabel(QStringLiteral("列表顺序就是页面顺序；支持 PNG/JPG/BMP/TIFF/GIF，可拖入图片。"), this));
+    root->addWidget(new QLabel(TR("列表顺序就是页面顺序；支持 PNG/JPG/BMP/TIFF/GIF，可拖入图片。"), this));
 
     auto* dropList = new DropListWidget(this);
     dropList->setExtensions({QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
@@ -41,9 +42,9 @@ ImageToPdfDialog::ImageToPdfDialog(std::shared_ptr<pw::IPdfBackend> backend, con
             [this](const QStringList& paths) { addImagePaths(paths); });
 
     auto* row = new QHBoxLayout();
-    auto* addBtn = new QPushButton(QStringLiteral("添加图片…"), this);
-    auto* delBtn = new QPushButton(QStringLiteral("移除选中"), this);
-    fitA4_ = new QCheckBox(QStringLiteral("等比缩放放进 A4"), this);
+    auto* addBtn = new QPushButton(TR("添加图片…"), this);
+    auto* delBtn = new QPushButton(TR("移除选中"), this);
+    fitA4_ = new QCheckBox(TR("等比缩放放进 A4"), this);
     fitA4_->setObjectName(QStringLiteral("fitA4"));
     row->addWidget(addBtn);
     row->addWidget(delBtn);
@@ -52,13 +53,13 @@ ImageToPdfDialog::ImageToPdfDialog(std::shared_ptr<pw::IPdfBackend> backend, con
     root->addLayout(row);
 
     auto* genRow = new QHBoxLayout();
-    auto* genBtn = new QPushButton(QStringLiteral("生成 PDF…"), this);
+    auto* genBtn = new QPushButton(TR("生成 PDF…"), this);
     genRow->addStretch(1);
     genRow->addWidget(genBtn);
     root->addLayout(genRow);
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(addBtn, &QPushButton::clicked, this, &ImageToPdfDialog::addImages);
@@ -85,8 +86,8 @@ void ImageToPdfDialog::addImagePaths(const QStringList& paths) {
 void ImageToPdfDialog::addImages() {
     const QString startDir = dir_.isEmpty() ? QDir::currentPath() : dir_;
     const QStringList files = QFileDialog::getOpenFileNames(
-        this, QStringLiteral("选择图片"), startDir,
-        QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.gif);;所有文件 (*)"));
+        this, TR("选择图片"), startDir,
+        TR("图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.gif);;所有文件 (*)"));
     addImagePaths(files);
 }
 
@@ -96,12 +97,12 @@ void ImageToPdfDialog::removeImages() {
 
 void ImageToPdfDialog::imagesToPdf() {
     if (imageList_->count() == 0) {
-        QMessageBox::information(this, QStringLiteral("没有图片"), QStringLiteral("先添加至少一张图片"));
+        QMessageBox::information(this, TR("没有图片"), TR("先添加至少一张图片"));
         return;
     }
     const QString defaultDir = dir_.isEmpty() ? QDir::currentPath() : dir_;
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("图片转 PDF 输出"),
-                                                     defaultDir + QStringLiteral("/图片合成.pdf"),
+    const QString out = QFileDialog::getSaveFileName(this, TR("图片转 PDF 输出"),
+                                                     defaultDir + TR("/图片合成.pdf"),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -118,8 +119,8 @@ void ImageToPdfDialog::imagesToPdf() {
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("生成失败"), QString::fromStdString(st.toString()));
+        QMessageBox::warning(this, TR("生成失败"), QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("图片转 PDF 完成：%1 张 -> %2").arg(images.size()).arg(out));
+    emit logMessage(TR("图片转 PDF 完成：%1 张 -> %2").arg(images.size()).arg(out));
 }

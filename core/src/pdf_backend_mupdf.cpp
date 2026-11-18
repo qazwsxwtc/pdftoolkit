@@ -6,6 +6,7 @@
 // 按提示改参数即可，接口层（IPdfBackend）不用动。
 
 #include "pdfword/pdf_backend.hpp"
+#include "pdfword/i18n.hpp"
 
 #if defined(PDFWORD_HAVE_MUPDF)
 
@@ -42,7 +43,7 @@ constexpr float kMaxRenderPixels = 16384.0f * 16384.0f;
 
 static pdf_document* openPdfDocU8(fz_context* ctx, const fs::path& p) {
 #ifdef _WIN32
-    fz_stream* stm = fz_open_file_w(ctx, p.wstring().c_str());
+    fz_stream* stm = fz_open_file_w(ctx, fsPathLong(p).wstring().c_str());
     pdf_document* doc = nullptr;
     fz_var(doc);
     fz_try(ctx) { doc = pdf_open_document_with_stream(ctx, stm); }
@@ -56,7 +57,7 @@ static pdf_document* openPdfDocU8(fz_context* ctx, const fs::path& p) {
 
 static fz_document* openAnyDocU8(fz_context* ctx, const fs::path& p) {
 #ifdef _WIN32
-    fz_stream* stm = fz_open_file_w(ctx, p.wstring().c_str());
+    fz_stream* stm = fz_open_file_w(ctx, fsPathLong(p).wstring().c_str());
     fz_document* doc = nullptr;
     fz_var(doc);
     fz_try(ctx) { doc = fz_open_document_with_stream(ctx, "application/pdf", stm); }
@@ -71,9 +72,21 @@ static fz_document* openAnyDocU8(fz_context* ctx, const fs::path& p) {
 static void savePdfDocU8(fz_context* ctx, pdf_document* doc, const fs::path& p,
                          const pdf_write_options* opts) {
 #ifdef _WIN32
-    FILE* f = ::_wfopen(p.wstring().c_str(), L"wb");
+    FILE* f = ::_wfopen(fsPathLong(p).wstring().c_str(), L"wb");
     if (f == nullptr) {
-        fz_throw(ctx, FZ_ERROR_ARGUMENT, "cannot write file: %s", fsUtf8(p).c_str());
+        // MuPDF 的错误缓冲只有两百来字节，整条超长路径塞进去会被截断、失去诊断价值，
+        // 所以只报「文件名片段的字符数 + 尾部一段」，并点出两个真实原因：
+        // 单段名超过 255 字符、或目录不存在/被占用。
+        // 字符数按 UTF-16 计（Windows 的 255 上限就是按 UTF-16 码元算的；Emoji 占两个，
+        // 正好也是最容易顶爆长度的字符）；截尾也按宽字符切，避免把一个多字节字符切成半截。
+        const std::wstring leafW = p.filename().wstring();
+        const std::size_t n = leafW.size();
+        std::size_t start = n > 24 ? n - 24 : 0;
+        if (start > 0 && start < n && leafW[start] >= 0xDC00 && leafW[start] <= 0xDFFF) --start;
+        const std::wstring tailW = start > 0 ? L"…" + leafW.substr(start) : leafW;
+        fz_throw(ctx, FZ_ERROR_ARGUMENT,
+                 pw::i18n::t("cannot write file（无法写文件，名称 %d 字符，超过 255 或路径非法）: %s"),
+                 static_cast<int>(n), wideToUtf8(tailW).c_str());
     }
     fz_output* out = nullptr;
     fz_var(out);
@@ -95,7 +108,7 @@ static void savePdfDocU8(fz_context* ctx, pdf_document* doc, const fs::path& p,
 
 static fz_image* loadImageU8(fz_context* ctx, const fs::path& p) {
 #ifdef _WIN32
-    fz_stream* stm = fz_open_file_w(ctx, p.wstring().c_str());
+    fz_stream* stm = fz_open_file_w(ctx, fsPathLong(p).wstring().c_str());
     fz_buffer* buf = nullptr;
     fz_image* img = nullptr;
     fz_var(buf);
@@ -153,7 +166,7 @@ public:
     }
 
     Status pageInfo(int pageIndex, PageInfo* out) const override {
-        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, "out 为空");
+        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("out 为空"));
         char msg[512] = {0};
         bool failed = false;
         fz_page* page = nullptr;
@@ -168,7 +181,7 @@ public:
         }
         if (page != nullptr) fz_drop_page(ctx_, page);
         if (failed) return Status::error(ErrorCode::IoError, msg);
-        if (fz_is_empty_rect(bounds)) return Status::error(ErrorCode::IoError, "页面尺寸为空");
+        if (fz_is_empty_rect(bounds)) return Status::error(ErrorCode::IoError, pw::i18n::t("页面尺寸为空"));
 
         out->index = pageIndex;
         out->widthPt = bounds.x1 - bounds.x0;
@@ -178,7 +191,7 @@ public:
     }
 
     Status pageText(int pageIndex, std::string* out) const override {
-        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, "out 为空");
+        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("out 为空"));
         out->clear();
         char msg[512] = {0};
         bool failed = false;
@@ -221,7 +234,7 @@ public:
     }
 
     Status renderPage(int pageIndex, float zoom, RasterImage* out) const override {
-        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, "out 为空");
+        if (out == nullptr) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("out 为空"));
         if (zoom <= 0.0f) zoom = 1.0f;
 
         float z = zoom;
@@ -253,7 +266,7 @@ public:
         }
         if (failed || pix == nullptr) {
             if (pix != nullptr) fz_drop_pixmap(ctx_, pix);
-            return Status::error(ErrorCode::IoError, failed ? msg : "渲染失败");
+            return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("渲染失败"));
         }
 
         int w = pix->w;
@@ -332,7 +345,7 @@ Status writeGraftedRange(fz_context* ctx, const std::vector<fs::path>& inputs, c
     }
     if (failed || dst == nullptr) {
         if (dst != nullptr) pdf_drop_document(ctx, dst);
-        return Status::error(ErrorCode::IoError, failed ? msg : "无法创建输出 PDF");
+        return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("无法创建输出 PDF"));
     }
 
     for (const auto& in : inputs) {
@@ -405,7 +418,7 @@ Status writeGraftedPages(fz_context* ctx, const fs::path& input, const fs::path&
     }
     if (failed || dst == nullptr) {
         if (dst != nullptr) pdf_drop_document(ctx, dst);
-        return Status::error(ErrorCode::IoError, failed ? msg : "无法创建输出 PDF");
+        return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("无法创建输出 PDF"));
     }
 
     fz_try(ctx) { src = openPdfDocU8(ctx, input); }
@@ -416,7 +429,7 @@ Status writeGraftedPages(fz_context* ctx, const fs::path& input, const fs::path&
     if (failed || src == nullptr) {
         if (src != nullptr) pdf_drop_document(ctx, src);
         pdf_drop_document(ctx, dst);
-        return Status::error(ErrorCode::IoError, failed ? msg : "无法打开源 PDF");
+        return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("无法打开源 PDF"));
     }
 
     int total = 0;
@@ -424,7 +437,7 @@ Status writeGraftedPages(fz_context* ctx, const fs::path& input, const fs::path&
         if (pdf_needs_password(ctx, src) != 0) {
             if (!pdf_authenticate_password(ctx, src, password.c_str())) {
                 std::snprintf(msg, sizeof(msg), "%s",
-                              password.empty() ? "文档已加密，需要密码" : "文档已加密，密码错误");
+                              password.empty() ? pw::i18n::t("文档已加密，需要密码") : pw::i18n::t("文档已加密，密码错误"));
                 failed = true;
             }
         }
@@ -438,7 +451,7 @@ Status writeGraftedPages(fz_context* ctx, const fs::path& input, const fs::path&
     if (!failed) {
         for (int p : pages) {
             if (p < 0 || p >= total) {
-                std::snprintf(msg, sizeof(msg), "页码 %d 超出范围（共 %d 页）", p + 1, total);
+                std::snprintf(msg, sizeof(msg), pw::i18n::t("页码 %d 超出范围（共 %d 页）"), p + 1, total);
                 failed = true;
                 break;
             }
@@ -580,7 +593,7 @@ Status writeAssembled(fz_context* ctx, const std::vector<PageRef>& pages, const 
     pdf_document* dst = nullptr;
     fz_try(ctx) { dst = pdf_create_document(ctx); }
     fz_catch(ctx) { return Status::error(ErrorCode::IoError, fz_caught_message(ctx)); }
-    if (dst == nullptr) return Status::error(ErrorCode::IoError, "无法创建输出 PDF");
+    if (dst == nullptr) return Status::error(ErrorCode::IoError, pw::i18n::t("无法创建输出 PDF"));
 
     bool failed = false;
     // 同一个源文件只打开一次；它同时对应一个 graft map，保证对象只拷一次
@@ -651,8 +664,8 @@ Status writeAssembled(fz_context* ctx, const std::vector<PageRef>& pages, const 
         }
         if (failed) break;
         if (ref.pageIndex < 0 || ref.pageIndex >= total) {
-            err = "页码 " + std::to_string(ref.pageIndex + 1) + " 超出范围（" +
-                  fsUtf8(ref.source.filename()) + " 共 " + std::to_string(total) + " 页）";
+            err = pw::i18n::t("页码 ") + std::to_string(ref.pageIndex + 1) + pw::i18n::t(" 超出范围（") +
+                  fsUtf8(ref.source.filename()) + pw::i18n::t(" 共 ") + std::to_string(total) + pw::i18n::t(" 页）");
             failed = true;
             break;
         }
@@ -1181,7 +1194,7 @@ Status writeWatermarked(fz_context* ctx, const fs::path& input, const fs::path& 
     }
     if (failed || dst == nullptr) {
         if (dst != nullptr) pdf_drop_document(ctx, dst);
-        return Status::error(ErrorCode::IoError, failed ? msg : "无法创建输出 PDF");
+        return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("无法创建输出 PDF"));
     }
 
     fz_try(ctx) { src = openPdfDocU8(ctx, input); }
@@ -1192,7 +1205,7 @@ Status writeWatermarked(fz_context* ctx, const fs::path& input, const fs::path& 
     if (failed || src == nullptr) {
         if (src != nullptr) pdf_drop_document(ctx, src);
         pdf_drop_document(ctx, dst);
-        return Status::error(ErrorCode::IoError, failed ? msg : "无法打开源 PDF");
+        return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("无法打开源 PDF"));
     }
 
     int total = 0;
@@ -1455,7 +1468,7 @@ Status writeWatermarked(fz_context* ctx, const fs::path& input, const fs::path& 
     pdf_drop_document(ctx, src);
     pdf_drop_document(ctx, dst);
 
-    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : "水印写入失败");
+    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : pw::i18n::t("水印写入失败"));
     return Status::success();
 }
 
@@ -1719,15 +1732,15 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
 
     fz_try(ctx) {
         srcDoc = openAnyDocU8(ctx, input);
-        if (srcDoc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
+        if (srcDoc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("无法打开源 PDF"));
         if (fz_needs_password(ctx, srcDoc)) {
-            if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，需要密码");
+            if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，需要密码"));
             if (!fz_authenticate_password(ctx, srcDoc, password.c_str())) {
-                fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，密码错误");
+                fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，密码错误"));
             }
         }
         src = pdf_specifics(ctx, srcDoc);
-        if (src == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "源文件不是 PDF");
+        if (src == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("源文件不是 PDF"));
         total = pdf_count_pages(ctx, src);
 
         if (generatePdf) {
@@ -1744,7 +1757,7 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
                 fz_try(ctx) { font = fz_new_cjk_font(ctx, FZ_ADOBE_GB); }
                 fz_catch(ctx) { font = nullptr; }
             }
-            if (font == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "找不到可用的中文字体（msyh.ttc / 内置 CJK）");
+            if (font == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("找不到可用的中文字体（msyh.ttc / 内置 CJK）"));
             fontRef = pdf_add_cid_font(ctx, dst, font);
         }
     }
@@ -1773,7 +1786,7 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
             zoom = float(std::clamp(2200.0 / longSide, 0.5, 8.0));
             fz_matrix ctm = fz_scale(zoom, zoom);
             pix = fz_new_pixmap_from_page(ctx, pg, ctm, fz_device_rgb(ctx), 0);
-            if (pix == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "页面渲染失败");
+            if (pix == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("页面渲染失败"));
             pixmapToRgba(pix, &raster);
             dispWidthPt = double(pix->w) / double(zoom);
             dispHeightPt = double(pix->h) / double(zoom);
@@ -1799,7 +1812,7 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
             fz_try(ctx) {
                 pdf_graft_mapped_page(ctx, graftMap, -1, src, i);
                 if (writeOcrPageLayer(ctx, dst, i, pageResult, font, fontRef) < 0) {
-                    fz_throw(ctx, FZ_ERROR_GENERIC, "文字层写入失败");
+                    fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文字层写入失败"));
                 }
             }
             fz_catch(ctx) {
@@ -1825,13 +1838,13 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
 
     if (!failed && generateTxt && !outTxt.empty()) {
         #ifdef _WIN32
-        std::ofstream ofs(outTxt.wstring().c_str(), std::ios::binary | std::ios::trunc);
+        std::ofstream ofs(fsPathLong(outTxt).wstring().c_str(), std::ios::binary | std::ios::trunc);
 #else
         std::ofstream ofs(outTxt, std::ios::binary | std::ios::trunc);
 #endif
         if (!ofs) {
             failed = true;
-            std::snprintf(msg, sizeof(msg), "无法写入文本文件: %s", fsUtf8(outTxt).c_str());
+            std::snprintf(msg, sizeof(msg), pw::i18n::t("无法写入文本文件: %s"), fsUtf8(outTxt).c_str());
         } else {
             ofs.write(allText.data(), static_cast<std::streamsize>(allText.size()));
         }
@@ -1843,7 +1856,7 @@ Status writeOcr(fz_context* ctx, const fs::path& input, const fs::path& outPdf,
     if (dst != nullptr) pdf_drop_document(ctx, dst);
     if (srcDoc != nullptr) fz_drop_document(ctx, srcDoc);
 
-    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : "OCR 失败");
+    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : pw::i18n::t("OCR 失败"));
     return Status::success();
 }
 
@@ -2079,7 +2092,7 @@ bool registerAnnotFont(fz_context* ctx, pdf_document* doc, pdf_obj* fontRef, con
     bool ok = true;
     fz_try(ctx) {
         pdf_obj* root = pdf_dict_get(ctx, pdf_trailer(ctx, doc), PDF_NAME(Root));
-        if (root == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "PDF 缺少 /Root");
+        if (root == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("PDF 缺少 /Root"));
         pdf_obj* acro = pdf_dict_get(ctx, root, PDF_NAME(AcroForm));
         if (acro == nullptr) {
             acro = pdf_new_dict(ctx, doc, 3);
@@ -2106,7 +2119,7 @@ bool registerAnnotFont(fz_context* ctx, pdf_document* doc, pdf_obj* fontRef, con
 // 批注主流程：打开源 → 逐条加批注 → 另存。原页内容不改，批注是叠加对象。
 Status writeAnnots(fz_context* ctx, const fs::path& input, const fs::path& output,
                    const std::vector<AnnotSpec>& annots, const std::string& password) {
-    if (annots.empty()) return Status::error(ErrorCode::InvalidArgument, "没有要添加的批注");
+    if (annots.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有要添加的批注"));
 
     char msg[512] = {0};
     bool failed = false;
@@ -2116,12 +2129,12 @@ Status writeAnnots(fz_context* ctx, const fs::path& input, const fs::path& outpu
 
     fz_try(ctx) {
         doc = openPdfDocU8(ctx, input);
-        if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
+        if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("无法打开源 PDF"));
         if (fz_needs_password(ctx, reinterpret_cast<fz_document*>(doc))) {
-            if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，需要密码");
+            if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，需要密码"));
             if (!fz_authenticate_password(ctx, reinterpret_cast<fz_document*>(doc),
                                           password.c_str())) {
-                fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，密码错误");
+                fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，密码错误"));
             }
         }
     }
@@ -2138,12 +2151,12 @@ Status writeAnnots(fz_context* ctx, const fs::path& input, const fs::path& outpu
     for (const AnnotSpec& spec : annots) {
         if (failed) break;
         if (spec.page < 0 || spec.page >= pageCount) {
-            std::snprintf(msg, sizeof(msg), "第 %d 页越界（共 %d 页）", spec.page + 1, pageCount);
+            std::snprintf(msg, sizeof(msg), pw::i18n::t("第 %d 页越界（共 %d 页）"), spec.page + 1, pageCount);
             failed = true;
             break;
         }
         if (spec.kind != AnnotKind::Ink && spec.kind != AnnotKind::Note && spec.rect.empty()) {
-            std::snprintf(msg, sizeof(msg), "第 %d 页批注区域为空", spec.page + 1);
+            std::snprintf(msg, sizeof(msg), pw::i18n::t("第 %d 页批注区域为空"), spec.page + 1);
             failed = true;
             break;
         }
@@ -2307,7 +2320,7 @@ Status writeAnnots(fz_context* ctx, const fs::path& input, const fs::path& outpu
     if (font != nullptr) fz_drop_font(ctx, font);
     pdf_drop_document(ctx, doc);
 
-    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : "添加批注失败");
+    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : pw::i18n::t("添加批注失败"));
     return Status::success();
 }
 
@@ -2371,25 +2384,25 @@ std::string normalizeLinkUri(const std::string& uri) {
 Status writeLink(fz_context* ctx, const fs::path& input, const fs::path& output,
                  const LinkSpec& link, const std::string& password) {
     const std::string uri = normalizeLinkUri(link.uri);
-    if (uri.empty()) return Status::error(ErrorCode::InvalidArgument, "链接地址为空");
-    if (link.rect.empty()) return Status::error(ErrorCode::InvalidArgument, "链接区域为空");
+    if (uri.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("链接地址为空"));
+    if (link.rect.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("链接区域为空"));
 
     char msg[512] = {0};
     bool failed = false;
     pdf_document* doc = nullptr;
     fz_try(ctx) {
         doc = openPdfDocU8(ctx, input);
-        if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
+        if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("无法打开源 PDF"));
         if (fz_needs_password(ctx, reinterpret_cast<fz_document*>(doc))) {
-            if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，需要密码");
+            if (password.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，需要密码"));
             if (!fz_authenticate_password(ctx, reinterpret_cast<fz_document*>(doc),
                                           password.c_str())) {
-                fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，密码错误");
+                fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，密码错误"));
             }
         }
         const int pageCount = pdf_count_pages(ctx, doc);
         if (link.page < 0 || link.page >= pageCount) {
-            fz_throw(ctx, FZ_ERROR_GENERIC, "页号越界");
+            fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("页号越界"));
         }
     }
     fz_catch(ctx) {
@@ -2416,7 +2429,7 @@ Status writeLink(fz_context* ctx, const fs::path& input, const fs::path& output,
     if (page != nullptr) pdf_drop_page(ctx, page);
     pdf_drop_document(ctx, doc);
 
-    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : "添加链接失败");
+    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : pw::i18n::t("添加链接失败"));
     return Status::success();
 }
 
@@ -2427,16 +2440,16 @@ Status writeLink(fz_context* ctx, const fs::path& input, const fs::path& output,
 // 统一的打开（含密码校验）。失败时抛 MuPDF 异常，调用方用 fz_catch 接。
 pdf_document* openPdfForEdit(fz_context* ctx, const fs::path& input, const std::string& password) {
     pdf_document* doc = openPdfDocU8(ctx, input);
-    if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, "无法打开源 PDF");
+    if (doc == nullptr) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("无法打开源 PDF"));
     fz_document* fzdoc = reinterpret_cast<fz_document*>(doc);
     if (fz_needs_password(ctx, fzdoc)) {
         if (password.empty()) {
             fz_drop_document(ctx, fzdoc);
-            fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，需要密码");
+            fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，需要密码"));
         }
         if (!fz_authenticate_password(ctx, fzdoc, password.c_str())) {
             fz_drop_document(ctx, fzdoc);
-            fz_throw(ctx, FZ_ERROR_GENERIC, "文档已加密，密码错误");
+            fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("文档已加密，密码错误"));
         }
     }
     return doc;
@@ -2500,7 +2513,7 @@ Result<std::vector<FormField>> readFormFields(fz_context* ctx, const fs::path& i
                     f.name = name;
                     fz_free(ctx, name);
                 }
-                if (f.name.empty()) f.name = "(未命名字段)";
+                if (f.name.empty()) f.name = pw::i18n::t("(未命名字段)");
 
                 const char* value = pdf_field_value(ctx, obj);
                 f.value = value != nullptr ? value : "";
@@ -2539,7 +2552,7 @@ bool isOnValue(const std::string& v) {
 
 Status writeFormFill(fz_context* ctx, const fs::path& input, const fs::path& output,
                      const std::vector<FieldValue>& values, const std::string& password) {
-    if (values.empty()) return Status::error(ErrorCode::InvalidArgument, "没有填写任何字段");
+    if (values.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有填写任何字段"));
 
     char msg[512] = {0};
     bool failed = false;
@@ -2601,7 +2614,7 @@ Status writeFormFill(fz_context* ctx, const fs::path& input, const fs::path& out
 
     if (!failed && matched == 0) {
         failed = true;
-        std::snprintf(msg, sizeof(msg), "文档里没有这些字段名，一个都没填上");
+        std::snprintf(msg, sizeof(msg), pw::i18n::t("文档里没有这些字段名，一个都没填上"));
     }
 
     if (!failed) {
@@ -2665,7 +2678,7 @@ pdf_obj* makeWidgetAppearance(fz_context* ctx, pdf_document* doc, fz_rect urect,
 
 Status writeFormCreate(fz_context* ctx, const fs::path& input, const fs::path& output,
                        const std::vector<FieldSpec>& fields, const std::string& password) {
-    if (fields.empty()) return Status::error(ErrorCode::InvalidArgument, "没有要创建的字段");
+    if (fields.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有要创建的字段"));
 
     char msg[512] = {0};
     bool failed = false;
@@ -2719,10 +2732,10 @@ Status writeFormCreate(fz_context* ctx, const fs::path& input, const fs::path& o
         const int pageCount = pdf_count_pages(ctx, doc);
         for (const FieldSpec& spec : fields) {
             if (spec.page < 0 || spec.page >= pageCount) {
-                fz_throw(ctx, FZ_ERROR_GENERIC, "新建字段的页号越界");
+                fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("新建字段的页号越界"));
             }
-            if (spec.rect.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "新建字段的区域为空");
-            if (spec.name.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, "字段名不能为空");
+            if (spec.rect.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("新建字段的区域为空"));
+            if (spec.name.empty()) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("字段名不能为空"));
 
             pdf_obj* pageobj = pdf_lookup_page_obj(ctx, doc, spec.page);
             PageTransform t = pageTransform(ctx, pageobj);
@@ -2837,7 +2850,7 @@ Status writeFormCreate(fz_context* ctx, const fs::path& input, const fs::path& o
     if (doc != nullptr) pdf_drop_document(ctx, doc);
 
     if (failed) return Status::error(ErrorCode::IoError, msg);
-    if (created == 0) return Status::error(ErrorCode::InvalidArgument, "没有创建任何字段");
+    if (created == 0) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有创建任何字段"));
     return Status::success();
 }
 
@@ -2959,7 +2972,7 @@ std::vector<TextHit> searchTextInDoc(fz_context* ctx, pdf_document* doc, const s
 Result<std::vector<TextHit>> readFindText(fz_context* ctx, const fs::path& input,
                                           const std::string& needle, int page,
                                           const std::string& password) {
-    if (needle.empty()) return Status::error(ErrorCode::InvalidArgument, "查找内容为空");
+    if (needle.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("查找内容为空"));
 
     char msg[512] = {0};
     bool failed = false;
@@ -3037,7 +3050,7 @@ std::string textInRectOfDoc(fz_context* ctx, pdf_document* doc, int pageIndex, c
 
 Result<std::string> readTextInRect(fz_context* ctx, const fs::path& input, int page,
                                    const RectD& rect, const std::string& password) {
-    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, "矩形太小");
+    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("矩形太小"));
 
     char msg[512] = {0};
     bool failed = false;
@@ -3224,7 +3237,7 @@ int writeTextLayer(fz_context* ctx, pdf_document* doc, int pageIndex,
             }
             ++written;
         }
-        if (written == 0) fz_throw(ctx, FZ_ERROR_GENERIC, "没有可写入的文字");
+        if (written == 0) fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("没有可写入的文字"));
 
         pdf_obj* form = pdf_new_dict(ctx, doc, 8);
         pdf_dict_put(ctx, form, PDF_NAME(Type), PDF_NAME(XObject));
@@ -3299,9 +3312,9 @@ int writeTextLayer(fz_context* ctx, pdf_document* doc, int pageIndex,
 Status writeReplaceText(fz_context* ctx, const fs::path& input, const fs::path& output,
                         const std::string& find, const std::string& replace,
                         const ReplaceOptions& opts, const std::string& password) {
-    if (find.empty()) return Status::error(ErrorCode::InvalidArgument, "查找内容为空");
+    if (find.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("查找内容为空"));
     if (!opts.deleteOnly && replace.empty()) {
-        return Status::error(ErrorCode::InvalidArgument, "替换内容为空（若只想删除，请勾选“只删不写”）");
+        return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("替换内容为空（若只想删除，请勾选“只删不写”）"));
     }
 
     char msg[512] = {0};
@@ -3329,7 +3342,7 @@ Status writeReplaceText(fz_context* ctx, const fs::path& input, const fs::path& 
     }
     if (hits.empty()) {
         pdf_drop_document(ctx, doc);
-        return Status::error(ErrorCode::InvalidArgument, "没有找到要替换的文字");
+        return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有找到要替换的文字"));
     }
     if (opts.limit > 0 && static_cast<int>(hits.size()) > opts.limit) {
         hits.resize(static_cast<std::size_t>(opts.limit));
@@ -3361,7 +3374,7 @@ Status writeReplaceText(fz_context* ctx, const fs::path& input, const fs::path& 
         }
         fz_try(ctx) {
             if (writeTextLayer(ctx, doc, i, items, font, fontRef, true) < 0) {
-                fz_throw(ctx, FZ_ERROR_GENERIC, "写回新文字失败");
+                fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("写回新文字失败"));
             }
         }
         fz_catch(ctx) {
@@ -3404,9 +3417,9 @@ Status writeReplaceText(fz_context* ctx, const fs::path& input, const fs::path& 
 Status writeTextAtRect(fz_context* ctx, const fs::path& input, const fs::path& output, int pageIndex,
                        const RectD& rect, const std::string& text, const ReplaceOptions& opts,
                        bool backdrop, const std::string& password) {
-    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, "矩形为空");
+    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("矩形为空"));
     if (!opts.deleteOnly && text.empty()) {
-        return Status::error(ErrorCode::InvalidArgument, "新文字为空（只想删就把 deleteOnly 打开）");
+        return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("新文字为空（只想删就把 deleteOnly 打开）"));
     }
 
     char msg[512] = {0};
@@ -3426,8 +3439,8 @@ Status writeTextAtRect(fz_context* ctx, const fs::path& input, const fs::path& o
     if (pageIndex < 0 || pageIndex >= pageCount) {
         pdf_drop_document(ctx, doc);
         return Status::error(ErrorCode::InvalidArgument,
-                             std::string("页码超出范围（这里要 0 基，文档共 ") + std::to_string(pageCount) +
-                                 " 页）");
+                             std::string(pw::i18n::t("页码超出范围（这里要 0 基，文档共 ")) + std::to_string(pageCount) +
+                                 pw::i18n::t(" 页）"));
     }
 
     TextPlacement p;
@@ -3445,7 +3458,7 @@ Status writeTextAtRect(fz_context* ctx, const fs::path& input, const fs::path& o
     std::vector<TextPlacement> items{p};
     fz_try(ctx) {
         if (writeTextLayer(ctx, doc, pageIndex, items, font, fontRef, backdrop) < 0) {
-            fz_throw(ctx, FZ_ERROR_GENERIC, "写字失败（字体或页面资源没准备好）");
+            fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("写字失败（字体或页面资源没准备好）"));
         }
     }
     fz_catch(ctx) {
@@ -3478,8 +3491,8 @@ Status writeTextAtRect(fz_context* ctx, const fs::path& input, const fs::path& o
 
 Status writeReplaceImage(fz_context* ctx, const fs::path& input, const fs::path& output, int pageIndex,
                          const RectD& rect, const fs::path& imagePath, const std::string& password) {
-    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, "替换区域为空");
-    if (imagePath.empty()) return Status::error(ErrorCode::InvalidArgument, "没有指定图片");
+    if (rect.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("替换区域为空"));
+    if (imagePath.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有指定图片"));
 
     char msg[512] = {0};
     bool failed = false;
@@ -3490,7 +3503,7 @@ Status writeReplaceImage(fz_context* ctx, const fs::path& input, const fs::path&
         doc = openPdfForEdit(ctx, input, password);
         const int pageCount = pdf_count_pages(ctx, doc);
         if (pageIndex < 0 || pageIndex >= pageCount) {
-            fz_throw(ctx, FZ_ERROR_GENERIC, "页号越界");
+            fz_throw(ctx, FZ_ERROR_GENERIC, pw::i18n::t("页号越界"));
         }
         image = loadImageU8(ctx, imagePath);
     }
@@ -3636,7 +3649,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
     }
     if (failed || dst == nullptr) {
         if (dst != nullptr) pdf_drop_document(ctx, dst);
-        return Status::error(ErrorCode::IoError, failed ? msg : "无法创建输出 PDF");
+        return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("无法创建输出 PDF"));
     }
 
     fz_try(ctx) { src = openPdfDocU8(ctx, input); }
@@ -3647,7 +3660,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
     if (failed || src == nullptr) {
         if (src != nullptr) pdf_drop_document(ctx, src);
         pdf_drop_document(ctx, dst);
-        return Status::error(ErrorCode::IoError, failed ? msg : "无法打开源 PDF");
+        return Status::error(ErrorCode::IoError, failed ? msg : pw::i18n::t("无法打开源 PDF"));
     }
 
     int total = 0;
@@ -3655,7 +3668,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
         if (pdf_needs_password(ctx, src) != 0) {
             if (!pdf_authenticate_password(ctx, src, password.c_str())) {
                 std::snprintf(msg, sizeof(msg), "%s",
-                              password.empty() ? "文档已加密，需要密码" : "文档已加密，密码错误");
+                              password.empty() ? pw::i18n::t("文档已加密，需要密码") : pw::i18n::t("文档已加密，密码错误"));
                 failed = true;
             }
         }
@@ -3676,7 +3689,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
 
     if (!failed && image == nullptr) {
         failed = true;
-        std::snprintf(msg, sizeof(msg), "无法读取水印图片: %s", fsUtf8(imagePath).c_str());
+        std::snprintf(msg, sizeof(msg), pw::i18n::t("无法读取水印图片: %s"), fsUtf8(imagePath).c_str());
     }
 
     // 图片宽高比（fz_image 的 w/h 是像素尺寸，与 DPI 无关，只用比例）
@@ -3846,7 +3859,7 @@ Status writeImageWatermarked(fz_context* ctx, const fs::path& input, const fs::p
     pdf_drop_document(ctx, src);
     pdf_drop_document(ctx, dst);
 
-    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : "图片水印写入失败");
+    if (failed) return Status::error(ErrorCode::IoError, msg[0] != '\0' ? msg : pw::i18n::t("图片水印写入失败"));
     return Status::success();
 }
 
@@ -3860,12 +3873,12 @@ public:
     Result<std::shared_ptr<IPdfDocument>> open(const fs::path& path,
                                                const std::string& password) override {
         std::error_code ec;
-        if (!fs::exists(path, ec)) {
-            return Status::error(ErrorCode::IoError, "文件不存在: " + fsUtf8(path));
+        if (!existsLong(path)) {
+            return Status::error(ErrorCode::IoError, pw::i18n::t("文件不存在: ") + fsUtf8(path));
         }
 
         fz_context* ctx = fz_new_context(nullptr, nullptr, FZ_STORE_DEFAULT);
-        if (ctx == nullptr) return Status::error(ErrorCode::Internal, "无法创建 MuPDF 上下文");
+        if (ctx == nullptr) return Status::error(ErrorCode::Internal, pw::i18n::t("无法创建 MuPDF 上下文"));
 
         fz_document* doc = nullptr;
         char msg[512] = {0};
@@ -3879,10 +3892,10 @@ public:
                 if (password.empty()) {
                     failed = true;
                     std::snprintf(msg, sizeof(msg),
-                                  "文档已加密，需要密码（open() 的 password 参数 / CLI --password / C ABI pw_set_pdf_password）");
+                                  pw::i18n::t("文档已加密，需要密码（open() 的 password 参数 / CLI --password / C ABI pw_set_pdf_password）"));
                 } else if (fz_authenticate_password(ctx, doc, password.c_str()) == 0) {
                     failed = true;
-                    std::snprintf(msg, sizeof(msg), "文档已加密，密码错误");
+                    std::snprintf(msg, sizeof(msg), pw::i18n::t("文档已加密，密码错误"));
                 }
             }
         }
@@ -3909,7 +3922,7 @@ public:
     }
 
     Status merge(const std::vector<fs::path>& inputs, const fs::path& output) override {
-        if (inputs.empty()) return Status::error(ErrorCode::InvalidArgument, "输入列表为空");
+        if (inputs.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入列表为空"));
         return withContext([&](fz_context* ctx) -> Status {
             // 页数上限给足，等于“把 inputs 里所有页全部 graft 过来”
             return writeGraftedRange(ctx, inputs, output, 0, std::numeric_limits<int>::max());
@@ -3917,7 +3930,7 @@ public:
     }
 
     Status split(const fs::path& input, const fs::path& outDir, int pagesPerFile) override {
-        if (pagesPerFile <= 0) return Status::error(ErrorCode::InvalidArgument, "pagesPerFile 必须 > 0");
+        if (pagesPerFile <= 0) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("pagesPerFile 必须 > 0"));
         std::error_code ec;
         fs::create_directories(outDir, ec);
         return withContext([&](fz_context* ctx) -> Status {
@@ -3953,7 +3966,7 @@ public:
 
     Status extract(const fs::path& input, const fs::path& output, const std::vector<int>& pages,
                    const std::string& password) override {
-        if (pages.empty()) return Status::error(ErrorCode::InvalidArgument, "没有选中任何页面");
+        if (pages.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有选中任何页面"));
         return withContext([&](fz_context* ctx) -> Status {
             return writeGraftedPages(ctx, input, output, pages, password);
         });
@@ -3961,7 +3974,7 @@ public:
 
     Status watermark(const fs::path& input, const fs::path& output, const std::string& text,
                      float opacity, const std::string& position) override {
-        if (text.empty()) return Status::error(ErrorCode::InvalidArgument, "水印文本为空");
+        if (text.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("水印文本为空"));
         if (opacity < 0.0f) opacity = 0.0f;
         if (opacity > 1.0f) opacity = 1.0f;
         return withContext([&](fz_context* ctx) -> Status {
@@ -3973,8 +3986,8 @@ public:
                           float opacity, float scale, bool tile,
                           const std::string& password) override {
         std::error_code ec;
-        if (!fs::exists(image, ec)) {
-            return Status::error(ErrorCode::InvalidArgument, "水印图片不存在: " + fsUtf8(image));
+        if (!existsLong(image)) {
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("水印图片不存在: ") + fsUtf8(image));
         }
         if (opacity < 0.0f) opacity = 0.0f;
         if (opacity > 1.0f) opacity = 1.0f;
@@ -3987,14 +4000,14 @@ public:
 
     Status assemble(const std::vector<PageRef>& pages, const fs::path& output,
                     const std::string& password) override {
-        if (pages.empty()) return Status::error(ErrorCode::InvalidArgument, "输出没有任何页面");
+        if (pages.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输出没有任何页面"));
         return withContext([&](fz_context* ctx) -> Status {
             return writeAssembled(ctx, pages, output, password);
         });
     }
 
     Status imagesToPdf(const std::vector<ImagePage>& images, const fs::path& output) override {
-        if (images.empty()) return Status::error(ErrorCode::InvalidArgument, "没有输入图片");
+        if (images.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有输入图片"));
         return withContext([&](fz_context* ctx) -> Status {
             return writeImagesAsPdf(ctx, images, output);
         });
@@ -4004,13 +4017,13 @@ public:
                const std::string& language, bool generatePdf, bool generateTxt,
                const std::string& password) override {
         if (!generatePdf && !generateTxt) {
-            return Status::error(ErrorCode::InvalidArgument, "至少选择“可检索 PDF”或“纯文本”其中一项");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("至少选择“可检索 PDF”或“纯文本”其中一项"));
         }
         if (generatePdf && outputPdf.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "没有指定可检索 PDF 的输出路径");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有指定可检索 PDF 的输出路径"));
         }
         if (generateTxt && outputTxt.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "没有指定纯文本的输出路径");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("没有指定纯文本的输出路径"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeOcr(ctx, input, outputPdf, outputTxt, language, generatePdf, generateTxt,
@@ -4023,7 +4036,7 @@ public:
     Status annotate(const fs::path& input, const fs::path& output,
                     const std::vector<AnnotSpec>& annots, const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeAnnots(ctx, input, output, annots, password);
@@ -4033,7 +4046,7 @@ public:
     Status addLink(const fs::path& input, const fs::path& output, const LinkSpec& link,
                    const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeLink(ctx, input, output, link, password);
@@ -4044,7 +4057,7 @@ public:
 
     Result<std::vector<FormField>> formFields(const fs::path& input,
                                              const std::string& password) override {
-        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, "输入路径为空");
+        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入路径为空"));
         return withContext([&](fz_context* ctx) -> Result<std::vector<FormField>> {
             return readFormFields(ctx, input, password);
         });
@@ -4053,7 +4066,7 @@ public:
     Status fillForm(const fs::path& input, const fs::path& output,
                     const std::vector<FieldValue>& values, const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeFormFill(ctx, input, output, values, password);
@@ -4063,7 +4076,7 @@ public:
     Status createForm(const fs::path& input, const fs::path& output,
                       const std::vector<FieldSpec>& fields, const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeFormCreate(ctx, input, output, fields, password);
@@ -4072,7 +4085,7 @@ public:
 
     Result<std::vector<TextHit>> findText(const fs::path& input, const std::string& needle, int page,
                                           const std::string& password) override {
-        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, "输入路径为空");
+        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入路径为空"));
         return withContext([&](fz_context* ctx) -> Result<std::vector<TextHit>> {
             return readFindText(ctx, input, needle, page, password);
         });
@@ -4082,7 +4095,7 @@ public:
                        const std::string& replace, const ReplaceOptions& opts,
                        const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeReplaceText(ctx, input, output, find, replace, opts, password);
@@ -4092,7 +4105,7 @@ public:
     Status replaceImage(const fs::path& input, const fs::path& output, int page, const RectD& rect,
                         const fs::path& imagePath, const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeReplaceImage(ctx, input, output, page, rect, imagePath, password);
@@ -4103,7 +4116,7 @@ public:
                          const std::string& text, const ReplaceOptions& opts,
                          const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeTextAtRect(ctx, input, output, page, rect, text, opts, true, password);
@@ -4114,7 +4127,7 @@ public:
                      const std::string& text, const ReplaceOptions& opts,
                      const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeTextAtRect(ctx, input, output, page, rect, text, opts, false, password);
@@ -4123,7 +4136,7 @@ public:
 
     Result<std::vector<OutlineItem>> outline(const fs::path& input,
                                              const std::string& password) override {
-        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, "输入路径为空");
+        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入路径为空"));
         return withContext([&](fz_context* ctx) -> Result<std::vector<OutlineItem>> {
             return readOutline(ctx, input, password);
         });
@@ -4133,7 +4146,7 @@ public:
                       const std::vector<OutlineItem>& items,
                       const std::string& password) override {
         if (input.empty() || output.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "输入或输出路径为空");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入或输出路径为空"));
         }
         return withContext([&](fz_context* ctx) -> Status {
             return writeOutline(ctx, input, output, items, password);
@@ -4142,7 +4155,7 @@ public:
 
     Result<std::string> textInRect(const fs::path& input, int page, const RectD& rect,
                                    const std::string& password) override {
-        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, "输入路径为空");
+        if (input.empty()) return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入路径为空"));
         return withContext([&](fz_context* ctx) -> Result<std::string> {
             return readTextInRect(ctx, input, page, rect, password);
         });
@@ -4150,7 +4163,7 @@ public:
 
     Result<DocumentMetadata> metadata(const fs::path& path, const std::string& password) override {
         fz_context* ctx = fz_new_context(nullptr, nullptr, FZ_STORE_DEFAULT);
-        if (ctx == nullptr) return Status::error(ErrorCode::Internal, "无法创建 MuPDF 上下文");
+        if (ctx == nullptr) return Status::error(ErrorCode::Internal, pw::i18n::t("无法创建 MuPDF 上下文"));
         bool registered = false;
         fz_try(ctx) {
             fz_register_document_handlers(ctx);
@@ -4161,7 +4174,7 @@ public:
         Result<DocumentMetadata> result =
             registered ? readMetadata(ctx, path, password)
                        : Result<DocumentMetadata>(
-                             Status::error(ErrorCode::Internal, "MuPDF 文档处理器注册失败"));
+                             Status::error(ErrorCode::Internal, pw::i18n::t("MuPDF 文档处理器注册失败")));
         fz_drop_context(ctx);
         return result;
     }
@@ -4177,7 +4190,7 @@ public:
                    const std::string& ownerPassword, int permissions,
                    const std::string& readPassword) override {
         if (userPassword.empty() && ownerPassword.empty()) {
-            return Status::error(ErrorCode::InvalidArgument, "加密至少需要用户密码或所有者密码");
+            return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("加密至少需要用户密码或所有者密码"));
         }
         // 所有者密码为空时用用户密码兜底：PDF 规范里两种密码不能同时为空
         const std::string owner = ownerPassword.empty() ? userPassword : ownerPassword;
@@ -4221,7 +4234,7 @@ private:
         using Ret = decltype(fn(std::declval<fz_context*>()));
         fz_context* ctx = fz_new_context(nullptr, nullptr, FZ_STORE_DEFAULT);
         if (ctx == nullptr) {
-            return Ret(Status::error(ErrorCode::Internal, "无法创建 MuPDF 上下文"));
+            return Ret(Status::error(ErrorCode::Internal, pw::i18n::t("无法创建 MuPDF 上下文")));
         }
         bool registered = false;
         fz_try(ctx) {
@@ -4230,7 +4243,7 @@ private:
         }
         fz_catch(ctx) { registered = false; }
         Ret st = registered ? Ret(fn(ctx))
-                            : Ret(Status::error(ErrorCode::Internal, "MuPDF 文档处理器注册失败"));
+                            : Ret(Status::error(ErrorCode::Internal, pw::i18n::t("MuPDF 文档处理器注册失败")));
         fz_drop_context(ctx);
         return st;
     }

@@ -1,4 +1,5 @@
 #include "pdfword/office_runner.hpp"
+#include "pdfword/i18n.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -8,12 +9,13 @@
 #include <string>
 #include <vector>
 
+#include "pdfword/path_util.hpp"
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include "pdfword/path_util.hpp"
 #endif
 
 namespace pw {
@@ -27,8 +29,8 @@ std::string toLower(std::string s) {
 }
 
 std::string readTextFile(const fs::path& path, std::size_t maxBytes) {
-    #ifdef _WIN32
-    std::ifstream in(path.wstring().c_str(), std::ios::binary);
+#ifdef _WIN32
+    std::ifstream in(fsPathLong(path).wstring().c_str(), std::ios::binary);
 #else
     std::ifstream in(path, std::ios::binary);
 #endif
@@ -40,17 +42,66 @@ std::string readTextFile(const fs::path& path, std::size_t maxBytes) {
     return s;
 }
 
+// file:// URL 里除了 RFC3986 的保留字符，其余（中文、日文、空格、#、%、&…）都必须
+// percent-encode，否则用户名或工作目录一含非 ASCII 字符，soffice 就把它当非法 URL 退出。
+std::string percentEncodePath(const std::string& utf8) {
+    std::string out;
+    out.reserve(utf8.size() * 2);
+    static const char* kHex = "0123456789ABCDEF";
+    for (unsigned char c : utf8) {
+        const bool keep = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                          (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' ||
+                          c == '~' || c == '/' || c == ':';
+        if (keep) {
+            out.push_back(static_cast<char>(c));
+        } else {
+            out.push_back('%');
+            out.push_back(kHex[c >> 4]);
+            out.push_back(kHex[c & 0x0F]);
+        }
+    }
+    return out;
+}
+
 // LibreOffice 的 -env:UserInstallation 需要 file:/// URL 形式，且路径分隔符要转成 /
 std::string toFileUrl(const fs::path& p) {
-#ifdef _WIN32
     std::string s = fsUtf8(p);
-#else
-    std::string s = fsUtf8(p);
-#endif
     std::replace(s.begin(), s.end(), '\\', '/');
     if (!s.empty() && s[0] != '/') s.insert(s.begin(), '/');
-    return "file://" + s;
+    return "file://" + percentEncodePath(s);
 }
+
+#ifdef _WIN32
+// MSVCRT 的命令行解析规则：引号内的反斜杠只有在紧邻引号或结尾时才具转义含义，
+// 所以 "C:\dir\" 会被当成未闭合引号 —— 目录参数几乎都以反斜杠结尾，必须按规则加倍。
+std::wstring quoteWinArg(const std::wstring& arg) {
+    if (arg.empty()) return L"\"\"";
+    const bool needQuote = arg.find_first_of(L" \t\n\v\"") != std::wstring::npos;
+    if (!needQuote) return arg;
+    std::wstring out = L"\"";
+    for (std::wstring::const_iterator it = arg.begin();;) {
+        std::size_t backslashes = 0;
+        while (it != arg.end() && *it == L'\\') {
+            ++it;
+            ++backslashes;
+        }
+        if (it == arg.end()) {
+            out.append(backslashes * 2, L'\\');
+            break;
+        }
+        if (*it == L'"') {
+            out.append(backslashes * 2 + 1, L'\\');
+            out.push_back(L'"');
+        } else {
+            out.append(backslashes, L'\\');
+            out.push_back(*it);
+        }
+        ++it;
+    }
+    out.push_back(L'"');
+    return out;
+}
+#endif
 
 std::string tail(const std::string& s, std::size_t maxLen) {
     if (s.size() <= maxLen) return s;
@@ -66,26 +117,16 @@ struct RunResult {
 
 #ifdef _WIN32
 
-std::wstring toWide(const std::string& s) {
-    if (s.empty()) return std::wstring();
-    int n = ::MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), nullptr, 0);
-    if (n <= 0) return std::wstring();
-    std::wstring w(static_cast<std::size_t>(n), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), w.data(), n);
-    return w;
-}
-
 // 启动外部进程并把 stdout/stderr 落到 logFile。
 // 超时时通过 JobObject 杀整棵进程树（soffice.exe 会再拉起 soffice.bin）。
 RunResult runProcess(const fs::path& exe, const std::vector<std::string>& args, int timeoutMs,
                      const fs::path& logFile) {
     RunResult r;
 
-    std::wstring cmd = L"\"" + toWide(fsUtf8(exe)) + L"\"";
+    std::wstring cmd = quoteWinArg(longPathW(exe));
     for (const auto& a : args) {
-        cmd += L" \"";
-        cmd += toWide(a);
-        cmd += L"\"";
+        cmd += L" ";
+        cmd += quoteWinArg(utf8ToWide(a));
     }
     std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
     cmdBuf.push_back(L'\0');
@@ -95,11 +136,11 @@ RunResult runProcess(const fs::path& exe, const std::vector<std::string>& args, 
     sa.bInheritHandle = TRUE;
     sa.lpSecurityDescriptor = nullptr;
 
-    std::wstring logPath = toWide(fsUtf8(logFile));
+    std::wstring logPath = longPathW(logFile);
     HANDLE hLog = ::CreateFileW(logPath.c_str(), GENERIC_WRITE, 0, &sa, CREATE_ALWAYS,
                                 FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hLog == INVALID_HANDLE_VALUE) {
-        r.output = "无法创建日志文件: " + fsUtf8(logFile);
+        r.output = pw::i18n::t("无法创建日志文件: ") + fsUtf8(logFile);
         return r;
     }
 
@@ -116,7 +157,7 @@ RunResult runProcess(const fs::path& exe, const std::vector<std::string>& args, 
     ::CloseHandle(hLog);
 
     if (!ok) {
-        r.output = "CreateProcess 失败, error=" + std::to_string(::GetLastError());
+        r.output = pw::i18n::t("CreateProcess 失败, error=") + std::to_string(::GetLastError());
         return r;
     }
     r.launched = true;
@@ -189,7 +230,7 @@ OfficeRunner::OfficeRunner(Config config) : config_(std::move(config)) {}
 bool OfficeRunner::available() const {
     if (!config_.libreOfficeConfigured()) return false;
     std::error_code ec;
-    return fs::exists(config_.libreOfficePath, ec);
+    return existsLong(config_.libreOfficePath);
 }
 
 fs::path OfficeRunner::isolatedProfileDir() const {
@@ -211,7 +252,7 @@ std::string OfficeRunner::versionString() const {
     // 一次没拿到就永久缓存"未知"，界面上再也修不回来。
     if (!versionCache_.empty()) return versionCache_;
     if (!available()) {
-        versionCache_ = "未配置";
+        versionCache_ = pw::i18n::t("未配置");
         return versionCache_;
     }
     // 和真正转换用同一套无窗口参数：裸 --version 会去碰默认 profile，
@@ -233,8 +274,8 @@ std::string OfficeRunner::versionString() const {
     while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
     if (text.empty()) {
         // 不写缓存，下次调用/刷新会重试
-        return r.timedOut ? "未知（soffice --version 超时，稍后重试）"
-                          : "未知（soffice --version 无输出，稍后重试）";
+        return r.timedOut ? pw::i18n::t("未知（soffice --version 超时，稍后重试）")
+                          : pw::i18n::t("未知（soffice --version 无输出，稍后重试）");
     }
     versionCache_ = text;
     return versionCache_;
@@ -242,11 +283,11 @@ std::string OfficeRunner::versionString() const {
 
 Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>* outputs) {
     if (request.inputs.empty()) {
-        return Status::error(ErrorCode::InvalidArgument, "输入文件列表为空");
+        return Status::error(ErrorCode::InvalidArgument, pw::i18n::t("输入文件列表为空"));
     }
     if (!available()) {
         return Status::error(ErrorCode::BackendMissing,
-                             "LibreOffice 未配置或路径不存在" + libreOfficeSetupHint(config_));
+                             pw::i18n::t("LibreOffice 未配置或路径不存在") + libreOfficeSetupHint(config_));
     }
 
     std::error_code ec;
@@ -254,8 +295,8 @@ Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>
     fs::create_directories(config_.workDir, ec);
 
     for (const auto& in : request.inputs) {
-        if (!fs::exists(in, ec)) {
-            return Status::error(ErrorCode::IoError, "输入文件不存在: " + fsUtf8(in));
+        if (!existsLong(in)) {
+            return Status::error(ErrorCode::IoError, pw::i18n::t("输入文件不存在: ") + fsUtf8(in));
         }
     }
 
@@ -290,11 +331,11 @@ Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>
 
     if (r.timedOut) {
         return Status::error(ErrorCode::Timeout,
-                             "LibreOffice 转换超时（" + std::to_string(timeoutMs) + " ms）");
+                             pw::i18n::t("LibreOffice 转换超时（") + std::to_string(timeoutMs) + pw::i18n::t(" ms）"));
     }
     if (r.exitCode != 0) {
         return Status::error(ErrorCode::ProcessFailed,
-                             "LibreOffice 退出码 " + std::to_string(r.exitCode) + "；输出: " +
+                             pw::i18n::t("LibreOffice 退出码 ") + std::to_string(r.exitCode) + pw::i18n::t("；输出: ") +
                                  tail(r.output, 2000));
     }
 
@@ -302,9 +343,9 @@ Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>
     std::vector<fs::path> produced;
     for (const auto& in : request.inputs) {
         fs::path expected = request.outDir / (fsUtf8(in.stem()) + "." + ext);
-        if (!fs::exists(expected, ec)) {
+        if (!existsLong(expected)) {
             return Status::error(ErrorCode::ProcessFailed,
-                                 "转换后未找到产物: " + fsUtf8(expected) + "；LibreOffice 输出: " +
+                                 pw::i18n::t("转换后未找到产物: ") + fsUtf8(expected) + pw::i18n::t("；LibreOffice 输出: ") +
                                      tail(r.output, 1500));
         }
         produced.push_back(expected);
@@ -312,7 +353,7 @@ Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>
 
     if (outputs != nullptr) *outputs = produced;
     if (request.log) {
-        request.log("完成: " + std::to_string(produced.size()) + " 个文件 -> " +
+        request.log(pw::i18n::t("完成: ") + std::to_string(produced.size()) + pw::i18n::t(" 个文件 -> ") +
                     fsUtf8(request.outDir));
     }
     return Status::success();

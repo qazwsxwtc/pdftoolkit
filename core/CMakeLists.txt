@@ -2,6 +2,8 @@
 add_library(pdfword_core STATIC
     src/result.cpp
     src/path_util.cpp
+    src/i18n.cpp
+    src/i18n_table.cpp
     src/config.cpp
     src/office_runner.cpp
     src/page_selection.cpp

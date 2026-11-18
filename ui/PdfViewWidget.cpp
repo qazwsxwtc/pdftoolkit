@@ -1,4 +1,5 @@
 #include "PdfViewWidget.h"
+#include "I18nUi.h"
 
 #include <QRubberBand>
 
@@ -104,10 +105,10 @@ PdfViewWidget::PdfViewWidget(std::shared_ptr<pw::IPdfBackend> backend, QWidget* 
     createNavBar();
 
     showHint(backend_ && backend_->available()
-                 ? QStringLiteral("打开一个 PDF 开始预览")
-                 : QStringLiteral("PDF 后端不可用：%1\n\n构建时启用 -DPDFWORD_WITH_MUPDF=ON 并指定 MuPDF SDK 路径。")
+                 ? TR("打开一个 PDF 开始预览")
+                 : TR("PDF 后端不可用：%1\n\n构建时启用 -DPDFWORD_WITH_MUPDF=ON 并指定 MuPDF SDK 路径。")
                        .arg(backend_ ? QString::fromStdString(backend_->unavailableReason())
-                                     : QStringLiteral("backend 为空")));
+                                     : TR("backend 为空")));
 
     // 键盘也能翻页：PageUp / PageDown 跟上一页 / 下一页对应
     auto* prevShortcut = new QShortcut(QKeySequence(Qt::Key_PageUp), this);
@@ -150,16 +151,16 @@ void PdfViewWidget::createNavBar() {
         navLayout->addWidget(line);
     };
 
-    prevBtn_ = addButton(QStringLiteral("上一页"), QStringLiteral("上一页（PageUp）"));
-    nextBtn_ = addButton(QStringLiteral("下一页"), QStringLiteral("下一页（PageDown）"));
+    prevBtn_ = addButton(TR("上一页"), TR("上一页（PageUp）"));
+    nextBtn_ = addButton(TR("下一页"), TR("下一页（PageDown）"));
     prevBtn_->setObjectName(QStringLiteral("prevPageButton"));
     nextBtn_->setObjectName(QStringLiteral("nextPageButton"));
     connect(prevBtn_, &QToolButton::clicked, this, [this] { showPage(currentPage_ - 1); });
     connect(nextBtn_, &QToolButton::clicked, this, [this] { showPage(currentPage_ + 1); });
 
     addSeparator();
-    zoomInBtn_ = addButton(QStringLiteral("放大"), QStringLiteral("放大一档（Ctrl + 滚轮向上）"));
-    zoomOutBtn_ = addButton(QStringLiteral("缩小"), QStringLiteral("缩小一档（Ctrl + 滚轮向下）"));
+    zoomInBtn_ = addButton(TR("放大"), TR("放大一档（Ctrl + 滚轮向上）"));
+    zoomOutBtn_ = addButton(TR("缩小"), TR("缩小一档（Ctrl + 滚轮向下）"));
     zoomInBtn_->setObjectName(QStringLiteral("zoomInButton"));
     zoomOutBtn_->setObjectName(QStringLiteral("zoomOutButton"));
     connect(zoomInBtn_, &QToolButton::clicked, this, [this] { zoomIn(); });
@@ -172,7 +173,7 @@ void PdfViewWidget::createNavBar() {
     pageSpin_->setAlignment(Qt::AlignRight);
     pageSpin_->setKeyboardTracking(false);  // 输入完回车/失焦才跳，不要边打字边跳
     pageSpin_->setFixedWidth(56);
-    pageSpin_->setToolTip(QStringLiteral("输入页码后回车，直接跳到那一页"));
+    pageSpin_->setToolTip(TR("输入页码后回车，直接跳到那一页"));
     navLayout->addWidget(pageSpin_);
     connect(pageSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int page) {
         if (document_ && page != currentPage_) showPage(page);
@@ -191,8 +192,8 @@ void PdfViewWidget::createNavBar() {
     navLayout->addStretch(1);
     foldBtn_ = new QToolButton(navBar_);
     foldBtn_->setObjectName(QStringLiteral("navFoldButton"));
-    foldBtn_->setText(QStringLiteral("收起 ▸"));
-    foldBtn_->setToolTip(QStringLiteral("向右收起导航条（上一页/下一页/缩放/页码）"));
+    foldBtn_->setText(TR("收起 ▸"));
+    foldBtn_->setToolTip(TR("向右收起导航条（上一页/下一页/缩放/页码）"));
     foldBtn_->setAutoRaise(true);
     foldBtn_->setCursor(Qt::PointingHandCursor);
     navLayout->addWidget(foldBtn_);
@@ -209,10 +210,10 @@ void PdfViewWidget::setNavCollapsed(bool collapsed) {
         if (control != nullptr) control->setVisible(!collapsed);
     }
     if (foldBtn_ != nullptr) {
-        foldBtn_->setText(collapsed ? QStringLiteral("◂ 展开") : QStringLiteral("收起 ▸"));
+        foldBtn_->setText(collapsed ? TR("◂ 展开") : TR("收起 ▸"));
         foldBtn_->setToolTip(collapsed
-                                 ? QStringLiteral("展开导航条（上一页/下一页/缩放/页码）")
-                                 : QStringLiteral("向右收起导航条（上一页/下一页/缩放/页码）"));
+                                 ? TR("展开导航条（上一页/下一页/缩放/页码）")
+                                 : TR("向右收起导航条（上一页/下一页/缩放/页码）"));
     }
     // 高度保持不动：这条挂在状态栏上，一收一放改高度会让最底下那行来回跳
 }
@@ -365,7 +366,7 @@ bool PdfViewWidget::openDocument(const QString& path, QString* error) {
         if (error != nullptr) {
             *error = QStringLiteral("PDF 后端不可用：%1")
                          .arg(backend_ ? QString::fromStdString(backend_->unavailableReason())
-                                       : QStringLiteral("backend 为空"));
+                                       : TR("backend 为空"));
         }
         return false;
     }
@@ -399,7 +400,7 @@ void PdfViewWidget::closeDocument() {
     pageCount_ = 0;
     currentPage_ = 1;
     clearPages();
-    showHint(QStringLiteral("打开一个 PDF 开始预览"));
+    showHint(TR("打开一个 PDF 开始预览"));
     updateNavBar();
 }
 
@@ -443,7 +444,7 @@ void PdfViewWidget::buildPages() {
         label->setBackgroundRole(QPalette::Base);
         label->setTextInteractionFlags(Qt::NoTextInteraction);
         // 还没渲染时只显示页码，用户能看出这是第几页、也知道正在往下滚
-        label->setText(QStringLiteral("第 %1 页").arg(i + 1));
+        label->setText(TR("第 %1 页").arg(i + 1));
         label->setStyleSheet(QStringLiteral("QLabel { background: #ffffff; color: #999999; }"));
         if (selectMode_) label->setCursor(Qt::CrossCursor);
         // 框选要靠页面 label 上的鼠标事件，不装过滤器就收不到
@@ -466,7 +467,7 @@ void PdfViewWidget::applyZoomToPages() {
         const int h = qMax(1, int(pageHpt_[i] * zoom_ + 0.5));
         pageLabels_[i]->setFixedSize(w, h);
         pageLabels_[i]->clear();
-        pageLabels_[i]->setText(QStringLiteral("第 %1 页").arg(i + 1));
+        pageLabels_[i]->setText(TR("第 %1 页").arg(i + 1));
         pageRendered_[i] = false;
         contentWidth = qMax(contentWidth, w);
         contentHeight += h;
@@ -500,7 +501,7 @@ void PdfViewWidget::updateVisiblePages() {
         } else if (!nearViewport && pageRendered_[i]) {
             // 离得远的页把位图放掉，80 页文档滚一遍也不会把内存吃满
             pageLabels_[i]->clear();
-            pageLabels_[i]->setText(QStringLiteral("第 %1 页").arg(i + 1));
+            pageLabels_[i]->setText(TR("第 %1 页").arg(i + 1));
             pageRendered_[i] = false;
         }
         top += height + kPageGap;

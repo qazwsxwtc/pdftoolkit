@@ -1,4 +1,5 @@
 #include "zip_writer.hpp"
+#include "pdfword/i18n.hpp"
 
 #include <cstdint>
 #include <fstream>
@@ -118,16 +119,16 @@ Status ZipWriter::write(const fs::path& path) {
     append16(file, 0);
 
     #ifdef _WIN32
-    std::ofstream out(path.wstring().c_str(), std::ios::binary | std::ios::trunc);
+    std::ofstream out(fsPathLong(path).wstring().c_str(), std::ios::binary | std::ios::trunc);
 #else
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
 #endif
     if (!out) {
-        return Status::error(ErrorCode::IoError, "无法写入文件: " + fsUtf8(path));
+        return Status::error(ErrorCode::IoError, pw::i18n::t("无法写入文件: ") + fsUtf8(path));
     }
     out.write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
     if (!out) {
-        return Status::error(ErrorCode::IoError, "写入过程中失败: " + fsUtf8(path));
+        return Status::error(ErrorCode::IoError, pw::i18n::t("写入过程中失败: ") + fsUtf8(path));
     }
     return Status::success();
 }

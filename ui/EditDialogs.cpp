@@ -1,4 +1,5 @@
 #include "EditDialogs.h"
+#include "I18nUi.h"
 
 #include <filesystem>
 #include <map>
@@ -49,8 +50,8 @@ namespace {
 // ---------------------------------------------------------------------------
 void enterPickMode(QDialog* dlg, PdfViewWidget* viewer, bool* picking, const QString& source) {
     if (viewer == nullptr || viewer->currentPath().isEmpty()) {
-        QMessageBox::information(dlg, QStringLiteral("没有预览"),
-                                 QStringLiteral("先在主窗口预览这个 PDF，再回来点框选。"));
+        QMessageBox::information(dlg, TR("没有预览"),
+                                 TR("先在主窗口预览这个 PDF，再回来点框选。"));
         return;
     }
     // 预览里必须是同一个文件，否则框出来的坐标会落到别的页面上
@@ -58,8 +59,8 @@ void enterPickMode(QDialog* dlg, PdfViewWidget* viewer, bool* picking, const QSt
     const QString wanted = QFileInfo(source).canonicalFilePath();
     if (!shown.isEmpty() && !wanted.isEmpty() && shown != wanted) {
         QMessageBox::information(
-            dlg, QStringLiteral("预览的不是这个文件"),
-            QStringLiteral("正在编辑：%1\n预览里打开的是：%2\n\n先在主窗口打开要编辑的文件，再来框选。")
+            dlg, TR("预览的不是这个文件"),
+            TR("正在编辑：%1\n预览里打开的是：%2\n\n先在主窗口打开要编辑的文件，再来框选。")
                 .arg(source, viewer->currentPath()));
         return;
     }
@@ -73,12 +74,12 @@ void enterPickMode(QDialog* dlg, PdfViewWidget* viewer, bool* picking, const QSt
         main->activateWindow();
         if (auto* mw = qobject_cast<QMainWindow*>(main)) {
             mw->statusBar()->showMessage(
-                QStringLiteral("框选中：在预览上按住左键拖一个框，松手后自动回到窗口（30 秒不拖框会自动返回）"),
+                TR("框选中：在预览上按住左键拖一个框，松手后自动回到窗口（30 秒不拖框会自动返回）"),
                 3000);
         }
     }
     QToolTip::showText(QCursor::pos(),
-                       QStringLiteral("在预览区按住左键拖一个框，松开后自动回到这个窗口"), main);
+                       TR("在预览区按住左键拖一个框，松开后自动回到这个窗口"), main);
 
     // 兜底：窗口藏着又没有框选时，不能让它一直不回来
     QTimer::singleShot(30000, dlg, [dlg, viewer, picking]() {
@@ -120,10 +121,10 @@ void buildRectRow(QHBoxLayout* row, QWidget* parent, QDoubleSpinBox** a, QDouble
     (*b)->setObjectName(QStringLiteral("%1Y0").arg(QString::fromUtf8(prefix)));
     (*c)->setObjectName(QStringLiteral("%1X1").arg(QString::fromUtf8(prefix)));
     (*d)->setObjectName(QStringLiteral("%1Y1").arg(QString::fromUtf8(prefix)));
-    row->addWidget(new QLabel(QStringLiteral("左上"), parent));
+    row->addWidget(new QLabel(TR("左上"), parent));
     row->addWidget(*a);
     row->addWidget(*b);
-    row->addWidget(new QLabel(QStringLiteral("右下"), parent));
+    row->addWidget(new QLabel(TR("右下"), parent));
     row->addWidget(*c);
     row->addWidget(*d);
     row->addStretch(1);
@@ -133,12 +134,12 @@ const char* const kColors[] = {"#FFD400", "#FF0000", "#00A000", "#0060D0", "#800
 
 QComboBox* colorCombo(QWidget* parent) {
     auto* c = new QComboBox(parent);
-    c->addItem(QStringLiteral("黄色 #FFD400"), QStringLiteral("#FFD400"));
-    c->addItem(QStringLiteral("红色 #FF0000"), QStringLiteral("#FF0000"));
-    c->addItem(QStringLiteral("绿色 #00A000"), QStringLiteral("#00A000"));
-    c->addItem(QStringLiteral("蓝色 #0060D0"), QStringLiteral("#0060D0"));
-    c->addItem(QStringLiteral("紫色 #8000C0"), QStringLiteral("#8000C0"));
-    c->addItem(QStringLiteral("黑色 #000000"), QStringLiteral("#000000"));
+    c->addItem(TR("黄色 #FFD400"), QStringLiteral("#FFD400"));
+    c->addItem(TR("红色 #FF0000"), QStringLiteral("#FF0000"));
+    c->addItem(TR("绿色 #00A000"), QStringLiteral("#00A000"));
+    c->addItem(TR("蓝色 #0060D0"), QStringLiteral("#0060D0"));
+    c->addItem(TR("紫色 #8000C0"), QStringLiteral("#8000C0"));
+    c->addItem(TR("黑色 #000000"), QStringLiteral("#000000"));
     return c;
 }
 
@@ -160,7 +161,7 @@ pw::RectD rectOf(double x0, double y0, double x1, double y1) {
 AnnotDialog::AnnotDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                          PdfViewWidget* viewer, QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source), viewer_(viewer) {
-    setWindowTitle(QStringLiteral("注释批注 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("注释批注 — %1").arg(QFileInfo(source_).fileName()));
     resize(640, 480);
 
     auto* root = new QVBoxLayout(this);
@@ -168,68 +169,68 @@ AnnotDialog::AnnotDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString
 
     kind_ = new QComboBox(this);
     kind_->setObjectName(QStringLiteral("annotKind"));
-    kind_->addItem(QStringLiteral("高亮"), int(pw::AnnotKind::Highlight));
-    kind_->addItem(QStringLiteral("下划线"), int(pw::AnnotKind::Underline));
-    kind_->addItem(QStringLiteral("删除线"), int(pw::AnnotKind::StrikeOut));
-    kind_->addItem(QStringLiteral("波浪线"), int(pw::AnnotKind::Squiggly));
-    kind_->addItem(QStringLiteral("便签"), int(pw::AnnotKind::Note));
-    kind_->addItem(QStringLiteral("文本框"), int(pw::AnnotKind::FreeText));
-    kind_->addItem(QStringLiteral("手绘标记"), int(pw::AnnotKind::Ink));
-    form->addRow(QStringLiteral("类型"), kind_);
+    kind_->addItem(TR("高亮"), int(pw::AnnotKind::Highlight));
+    kind_->addItem(TR("下划线"), int(pw::AnnotKind::Underline));
+    kind_->addItem(TR("删除线"), int(pw::AnnotKind::StrikeOut));
+    kind_->addItem(TR("波浪线"), int(pw::AnnotKind::Squiggly));
+    kind_->addItem(TR("便签"), int(pw::AnnotKind::Note));
+    kind_->addItem(TR("文本框"), int(pw::AnnotKind::FreeText));
+    kind_->addItem(TR("手绘标记"), int(pw::AnnotKind::Ink));
+    form->addRow(TR("类型"), kind_);
 
     text_ = new QPlainTextEdit(this);
     text_->setObjectName(QStringLiteral("annotText"));
-    text_->setPlaceholderText(QStringLiteral("便签 / 文本框的内容（其它类型忽略）"));
-    text_->setPlainText(QStringLiteral("这里是批注"));
+    text_->setPlaceholderText(TR("便签 / 文本框的内容（其它类型忽略）"));
+    text_->setPlainText(TR("这里是批注"));
     text_->setMaximumHeight(64);
-    form->addRow(QStringLiteral("内容"), text_);
+    form->addRow(TR("内容"), text_);
 
     color_ = colorCombo(this);
-    form->addRow(QStringLiteral("颜色"), color_);
+    form->addRow(TR("颜色"), color_);
 
     opacity_ = new QDoubleSpinBox(this);
     opacity_->setRange(0.1, 1.0);
     opacity_->setSingleStep(0.05);
     opacity_->setDecimals(2);
     opacity_->setValue(1.0);
-    form->addRow(QStringLiteral("不透明度"), opacity_);
+    form->addRow(TR("不透明度"), opacity_);
 
     author_ = new QLineEdit(this);
     author_->setText(QStringLiteral("Pdf-Toolkit"));
-    form->addRow(QStringLiteral("作者"), author_);
+    form->addRow(TR("作者"), author_);
 
     auto* pageRow = new QHBoxLayout();
-    pageRow->addWidget(new QLabel(QStringLiteral("页码"), this));
+    pageRow->addWidget(new QLabel(TR("页码"), this));
     page_ = new QSpinBox(this);
     page_->setObjectName(QStringLiteral("annotPage"));
     page_->setRange(1, 9999);
     page_->setValue(1);
     pageRow->addWidget(page_);
-    auto* pick = new QPushButton(QStringLiteral("在预览里框选位置"), this);
+    auto* pick = new QPushButton(TR("在预览里框选位置"), this);
     pick->setObjectName(QStringLiteral("annotPick"));
     pageRow->addWidget(pick);
     pageRow->addStretch(1);
-    form->addRow(QStringLiteral("位置"), pageRow);
+    form->addRow(TR("位置"), pageRow);
 
     auto* rectRow = new QHBoxLayout();
     buildRectRow(rectRow, this, &x0_, &y0_, &x1_, &y1_, "annot");
-    form->addRow(QStringLiteral("矩形(pt)"), rectRow);
+    form->addRow(TR("矩形(pt)"), rectRow);
     root->addLayout(form);
 
-    hint_ = new QLabel(QStringLiteral("坐标是页面左上原点、y 向下的 pt；不填也可以直接点「在预览里框选」。"), this);
+    hint_ = new QLabel(TR("坐标是页面左上原点、y 向下的 pt；不填也可以直接点「在预览里框选」。"), this);
     hint_->setStyleSheet(QStringLiteral("color:#666;"));
     root->addWidget(hint_);
     root->addStretch(1);
 
     auto* btnRow = new QHBoxLayout();
-    auto* applyBtn = new QPushButton(QStringLiteral("加批注并另存为…"), this);
+    auto* applyBtn = new QPushButton(TR("加批注并另存为…"), this);
     applyBtn->setObjectName(QStringLiteral("annotApply"));
     btnRow->addStretch(1);
     btnRow->addWidget(applyBtn);
     root->addLayout(btnRow);
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(pick, &QPushButton::clicked, this, &AnnotDialog::pickSelection);
@@ -259,7 +260,7 @@ void AnnotDialog::fillFromSelection(int page, QRectF rect) {
     y0_->setValue(rect.top());
     x1_->setValue(rect.right());
     y1_->setValue(rect.bottom());
-    hint_->setText(QStringLiteral("已取到第 %1 页的选区：%2,%3 → %4,%5")
+    hint_->setText(TR("已取到第 %1 页的选区：%2,%3 → %4,%5")
                        .arg(page)
                        .arg(rect.left(), 0, 'f', 1)
                        .arg(rect.top(), 0, 'f', 1)
@@ -274,8 +275,8 @@ void AnnotDialog::apply() {
     spec.page = page_->value() - 1;  // 界面 1 基、core 0 基
     spec.rect = rectOf(x0_->value(), y0_->value(), x1_->value(), y1_->value());
     if (spec.rect.empty()) {
-        QMessageBox::information(this, QStringLiteral("选区太小"),
-                                 QStringLiteral("先框选或手输一个不小于 0.5pt 的矩形。"));
+        QMessageBox::information(this, TR("选区太小"),
+                                 TR("先框选或手输一个不小于 0.5pt 的矩形。"));
         return;
     }
     spec.text = text_->toPlainText().toStdString();
@@ -295,8 +296,8 @@ void AnnotDialog::apply() {
         spec.inkPaths.push_back(pts);
     }
 
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("批注输出"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_批注")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("批注输出"),
+                                                     suggestPdfOutput(source_, TR("_批注")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -307,11 +308,11 @@ void AnnotDialog::apply() {
     QApplication::restoreOverrideCursor();
 
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("加批注失败"),
+        QMessageBox::warning(this, TR("加批注失败"),
                              QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已加批注（%1，第 %2 页） -> %3")
+    emit logMessage(TR("已加批注（%1，第 %2 页） -> %3")
                         .arg(kind_->currentText())
                         .arg(page_->value())
                         .arg(out));
@@ -324,7 +325,7 @@ void AnnotDialog::apply() {
 LinkDialog::LinkDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                        PdfViewWidget* viewer, QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source), viewer_(viewer) {
-    setWindowTitle(QStringLiteral("添加超链接 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("添加超链接 — %1").arg(QFileInfo(source_).fileName()));
     resize(620, 360);
 
     auto* root = new QVBoxLayout(this);
@@ -332,39 +333,39 @@ LinkDialog::LinkDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& 
 
     uri_ = new QLineEdit(this);
     uri_->setObjectName(QStringLiteral("linkUri"));
-    uri_->setPlaceholderText(QStringLiteral("https://example.com 或 第3页 / #page=3"));
+    uri_->setPlaceholderText(TR("https://example.com 或 第3页 / #page=3"));
     uri_->setText(QStringLiteral("https://"));
-    form->addRow(QStringLiteral("目标"), uri_);
+    form->addRow(TR("目标"), uri_);
 
     auto* pageRow = new QHBoxLayout();
-    pageRow->addWidget(new QLabel(QStringLiteral("页码"), this));
+    pageRow->addWidget(new QLabel(TR("页码"), this));
     page_ = new QSpinBox(this);
     page_->setObjectName(QStringLiteral("linkPage"));
     page_->setRange(1, 9999);
     pageRow->addWidget(page_);
-    auto* pick = new QPushButton(QStringLiteral("在预览里框选位置"), this);
+    auto* pick = new QPushButton(TR("在预览里框选位置"), this);
     pageRow->addWidget(pick);
     pageRow->addStretch(1);
-    form->addRow(QStringLiteral("位置"), pageRow);
+    form->addRow(TR("位置"), pageRow);
 
     auto* rectRow = new QHBoxLayout();
     buildRectRow(rectRow, this, &x0_, &y0_, &x1_, &y1_, "link");
-    form->addRow(QStringLiteral("矩形(pt)"), rectRow);
+    form->addRow(TR("矩形(pt)"), rectRow);
     root->addLayout(form);
 
-    hint_ = new QLabel(QStringLiteral("「第3页」「P3」「3」都会当成页内跳转；其它一律按外链网址。"), this);
+    hint_ = new QLabel(TR("「第3页」「P3」「3」都会当成页内跳转；其它一律按外链网址。"), this);
     hint_->setStyleSheet(QStringLiteral("color:#666;"));
     root->addWidget(hint_);
     root->addStretch(1);
 
     auto* btnRow = new QHBoxLayout();
-    auto* applyBtn = new QPushButton(QStringLiteral("加链接并另存为…"), this);
+    auto* applyBtn = new QPushButton(TR("加链接并另存为…"), this);
     btnRow->addStretch(1);
     btnRow->addWidget(applyBtn);
     root->addLayout(btnRow);
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(pick, &QPushButton::clicked, this, &LinkDialog::pickSelection);
@@ -387,7 +388,7 @@ void LinkDialog::fillFromSelection(int page, QRectF rect) {
     x1_->setValue(rect.right());
     y1_->setValue(rect.bottom());
     if (hint_ != nullptr) {
-        hint_->setText(QStringLiteral("已取到第 %1 页的选区：%2,%3 → %4,%5")
+        hint_->setText(TR("已取到第 %1 页的选区：%2,%3 → %4,%5")
                            .arg(page)
                            .arg(rect.left(), 0, 'f', 1)
                            .arg(rect.top(), 0, 'f', 1)
@@ -400,21 +401,21 @@ void LinkDialog::fillFromSelection(int page, QRectF rect) {
 void LinkDialog::apply() {
     const QString uri = uri_->text().trimmed();
     if (uri.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("需要目标"),
-                                 QStringLiteral("填一个网址，或者要跳转的页码（如 第3页）。"));
+        QMessageBox::information(this, TR("需要目标"),
+                                 TR("填一个网址，或者要跳转的页码（如 第3页）。"));
         return;
     }
     pw::LinkSpec spec;
     spec.page = page_->value() - 1;
     spec.rect = rectOf(x0_->value(), y0_->value(), x1_->value(), y1_->value());
     if (spec.rect.empty()) {
-        QMessageBox::information(this, QStringLiteral("选区太小"), QStringLiteral("先框选一个区域。"));
+        QMessageBox::information(this, TR("选区太小"), TR("先框选一个区域。"));
         return;
     }
     spec.uri = uri.toStdString();
 
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("链接输出"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_链接")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("链接输出"),
+                                                     suggestPdfOutput(source_, TR("_链接")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -423,11 +424,11 @@ void LinkDialog::apply() {
                                             pw::fsPath(out.toUtf8().toStdString()), spec);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("加链接失败"),
+        QMessageBox::warning(this, TR("加链接失败"),
                              QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已加超链接（%1） -> %2").arg(uri).arg(out));
+    emit logMessage(TR("已加超链接（%1） -> %2").arg(uri).arg(out));
 }
 
 // ===========================================================================
@@ -437,7 +438,7 @@ void LinkDialog::apply() {
 FindReplaceDialog::FindReplaceDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                                      QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source) {
-    setWindowTitle(QStringLiteral("查找替换 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("查找替换 — %1").arg(QFileInfo(source_).fileName()));
     resize(620, 380);
 
     auto* root = new QVBoxLayout(this);
@@ -445,44 +446,44 @@ FindReplaceDialog::FindReplaceDialog(std::shared_ptr<pw::IPdfBackend> backend, c
 
     find_ = new QLineEdit(this);
     find_->setObjectName(QStringLiteral("findText"));
-    find_->setPlaceholderText(QStringLiteral("要查找的文字，如 book"));
-    form->addRow(QStringLiteral("查找"), find_);
+    find_->setPlaceholderText(TR("要查找的文字，如 book"));
+    form->addRow(TR("查找"), find_);
 
     replace_ = new QLineEdit(this);
     replace_->setObjectName(QStringLiteral("replaceText"));
-    replace_->setPlaceholderText(QStringLiteral("替换成什么（勾了「只删除」就忽略）"));
-    form->addRow(QStringLiteral("替换为"), replace_);
+    replace_->setPlaceholderText(TR("替换成什么（勾了「只删除」就忽略）"));
+    form->addRow(TR("替换为"), replace_);
 
     auto* optRow = new QHBoxLayout();
-    deleteOnly_ = new QCheckBox(QStringLiteral("只删除（白底盖掉，不写新字）"), this);
-    caseSensitive_ = new QCheckBox(QStringLiteral("区分大小写"), this);
+    deleteOnly_ = new QCheckBox(TR("只删除（白底盖掉，不写新字）"), this);
+    caseSensitive_ = new QCheckBox(TR("区分大小写"), this);
     optRow->addWidget(deleteOnly_);
     optRow->addWidget(caseSensitive_);
     optRow->addStretch(1);
-    form->addRow(QStringLiteral("选项"), optRow);
+    form->addRow(TR("选项"), optRow);
 
     auto* styleRow = new QHBoxLayout();
-    styleRow->addWidget(new QLabel(QStringLiteral("字号"), this));
+    styleRow->addWidget(new QLabel(TR("字号"), this));
     fontSize_ = new QDoubleSpinBox(this);
     fontSize_->setRange(0.0, 200.0);
     fontSize_->setDecimals(1);
-    fontSize_->setSpecialValueText(QStringLiteral("自适应"));
+    fontSize_->setSpecialValueText(TR("自适应"));
     fontSize_->setValue(0.0);
     styleRow->addWidget(fontSize_);
-    styleRow->addWidget(new QLabel(QStringLiteral("颜色"), this));
+    styleRow->addWidget(new QLabel(TR("颜色"), this));
     color_ = colorCombo(this);
     color_->setCurrentIndex(5);  // 黑色
     styleRow->addWidget(color_);
-    styleRow->addWidget(new QLabel(QStringLiteral("最多替换"), this));
+    styleRow->addWidget(new QLabel(TR("最多替换"), this));
     limit_ = new QSpinBox(this);
     limit_->setRange(0, 9999);
-    limit_->setSpecialValueText(QStringLiteral("不限"));
+    limit_->setSpecialValueText(TR("不限"));
     styleRow->addWidget(limit_);
     styleRow->addStretch(1);
-    form->addRow(QStringLiteral("新字样式"), styleRow);
+    form->addRow(TR("新字样式"), styleRow);
     root->addLayout(form);
 
-    result_ = new QLabel(QStringLiteral("先点「查找」，看看这份文档里有多少处。"), this);
+    result_ = new QLabel(TR("先点「查找」，看看这份文档里有多少处。"), this);
     result_->setObjectName(QStringLiteral("findResult"));
     result_->setStyleSheet(QStringLiteral("color:#444;"));
     result_->setWordWrap(true);
@@ -490,9 +491,9 @@ FindReplaceDialog::FindReplaceDialog(std::shared_ptr<pw::IPdfBackend> backend, c
     root->addStretch(1);
 
     auto* btnRow = new QHBoxLayout();
-    auto* findBtn = new QPushButton(QStringLiteral("查找"), this);
+    auto* findBtn = new QPushButton(TR("查找"), this);
     findBtn->setObjectName(QStringLiteral("findPreview"));
-    auto* applyBtn = new QPushButton(QStringLiteral("替换并另存为…"), this);
+    auto* applyBtn = new QPushButton(TR("替换并另存为…"), this);
     applyBtn->setObjectName(QStringLiteral("replaceApply"));
     btnRow->addStretch(1);
     btnRow->addWidget(findBtn);
@@ -500,7 +501,7 @@ FindReplaceDialog::FindReplaceDialog(std::shared_ptr<pw::IPdfBackend> backend, c
     root->addLayout(btnRow);
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(findBtn, &QPushButton::clicked, this, &FindReplaceDialog::previewFind);
@@ -511,44 +512,44 @@ FindReplaceDialog::FindReplaceDialog(std::shared_ptr<pw::IPdfBackend> backend, c
 void FindReplaceDialog::previewFind() {
     const QString needle = find_->text();
     if (needle.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("需要查找内容"), QStringLiteral("先填要查找的文字。"));
+        QMessageBox::information(this, TR("需要查找内容"), TR("先填要查找的文字。"));
         return;
     }
     QApplication::setOverrideCursor(Qt::WaitCursor);
     auto hits = backend_->findText(pw::fsPath(source_.toUtf8().toStdString()), needle.toStdString());
     QApplication::restoreOverrideCursor();
     if (!hits.ok()) {
-        result_->setText(QStringLiteral("查找失败：%1").arg(QString::fromStdString(hits.status().toString())));
+        result_->setText(TR("查找失败：%1").arg(QString::fromStdString(hits.status().toString())));
         return;
     }
     if (hits.value().empty()) {
-        result_->setText(QStringLiteral("没找到「%1」。").arg(needle));
+        result_->setText(TR("没找到「%1」。").arg(needle));
         return;
     }
     std::map<int, int> perPage;
     for (const pw::TextHit& h : hits.value()) perPage[h.page] += 1;
     QString pages;
     for (const auto& kv : perPage) {
-        pages += QStringLiteral("第%1页×%2  ").arg(kv.first + 1).arg(kv.second);
+        pages += TR("第%1页×%2  ").arg(kv.first + 1).arg(kv.second);
     }
-    result_->setText(QStringLiteral("找到 %1 处：%2").arg(hits.value().size()).arg(pages));
-    emit logMessage(QStringLiteral("查找「%1」命中 %2 处").arg(needle).arg(hits.value().size()));
+    result_->setText(TR("找到 %1 处：%2").arg(hits.value().size()).arg(pages));
+    emit logMessage(TR("查找「%1」命中 %2 处").arg(needle).arg(hits.value().size()));
 }
 
 void FindReplaceDialog::applyReplace() {
     const QString needle = find_->text();
     if (needle.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("需要查找内容"), QStringLiteral("先填要查找的文字。"));
+        QMessageBox::information(this, TR("需要查找内容"), TR("先填要查找的文字。"));
         return;
     }
     const QString replacement = deleteOnly_->isChecked() ? QString() : replace_->text();
     if (replacement.isEmpty() && !deleteOnly_->isChecked()) {
-        QMessageBox::information(this, QStringLiteral("需要替换内容"),
-                                 QStringLiteral("填替换文字，或勾上「只删除」。"));
+        QMessageBox::information(this, TR("需要替换内容"),
+                                 TR("填替换文字，或勾上「只删除」。"));
         return;
     }
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("替换结果"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_替换")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("替换结果"),
+                                                     suggestPdfOutput(source_, TR("_替换")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -565,11 +566,11 @@ void FindReplaceDialog::applyReplace() {
         needle.toStdString(), replacement.toStdString(), opts);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("替换失败"), QString::fromStdString(st.toString()));
+        QMessageBox::warning(this, TR("替换失败"), QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已替换「%1」%2 -> %3")
-                        .arg(needle, deleteOnly_->isChecked() ? QStringLiteral("（只删除）") : QString())
+    emit logMessage(TR("已替换「%1」%2 -> %3")
+                        .arg(needle, deleteOnly_->isChecked() ? TR("（只删除）") : QString())
                         .arg(out));
 }
 
@@ -580,7 +581,7 @@ void FindReplaceDialog::applyReplace() {
 ReplaceImageDialog::ReplaceImageDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                                        PdfViewWidget* viewer, QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source), viewer_(viewer) {
-    setWindowTitle(QStringLiteral("替换图片 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("替换图片 — %1").arg(QFileInfo(source_).fileName()));
     resize(620, 360);
 
     auto* root = new QVBoxLayout(this);
@@ -590,40 +591,40 @@ ReplaceImageDialog::ReplaceImageDialog(std::shared_ptr<pw::IPdfBackend> backend,
     image_ = new QLineEdit(this);
     image_->setObjectName(QStringLiteral("replaceImage"));
     image_->setPlaceholderText(QStringLiteral("PNG / JPG"));
-    auto* browse = new QPushButton(QStringLiteral("浏览…"), this);
+    auto* browse = new QPushButton(TR("浏览…"), this);
     imageRow->addWidget(image_, 1);
     imageRow->addWidget(browse);
-    form->addRow(QStringLiteral("新图片"), imageRow);
+    form->addRow(TR("新图片"), imageRow);
 
     auto* pageRow = new QHBoxLayout();
-    pageRow->addWidget(new QLabel(QStringLiteral("页码"), this));
+    pageRow->addWidget(new QLabel(TR("页码"), this));
     page_ = new QSpinBox(this);
     page_->setObjectName(QStringLiteral("imagePage"));
     page_->setRange(1, 9999);
     pageRow->addWidget(page_);
-    auto* pick = new QPushButton(QStringLiteral("在预览里框选位置"), this);
+    auto* pick = new QPushButton(TR("在预览里框选位置"), this);
     pageRow->addWidget(pick);
     pageRow->addStretch(1);
-    form->addRow(QStringLiteral("位置"), pageRow);
+    form->addRow(TR("位置"), pageRow);
 
     auto* rectRow = new QHBoxLayout();
     buildRectRow(rectRow, this, &x0_, &y0_, &x1_, &y1_, "image");
-    form->addRow(QStringLiteral("矩形(pt)"), rectRow);
+    form->addRow(TR("矩形(pt)"), rectRow);
     root->addLayout(form);
 
-    hint_ = new QLabel(QStringLiteral("新图会等比装进这个矩形并居中，原图被白底盖掉。"), this);
+    hint_ = new QLabel(TR("新图会等比装进这个矩形并居中，原图被白底盖掉。"), this);
     hint_->setStyleSheet(QStringLiteral("color:#666;"));
     root->addWidget(hint_);
     root->addStretch(1);
 
     auto* btnRow = new QHBoxLayout();
-    auto* applyBtn = new QPushButton(QStringLiteral("替换并另存为…"), this);
+    auto* applyBtn = new QPushButton(TR("替换并另存为…"), this);
     btnRow->addStretch(1);
     btnRow->addWidget(applyBtn);
     root->addLayout(btnRow);
 
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(browse, &QPushButton::clicked, this, &ReplaceImageDialog::pickImage);
@@ -637,11 +638,11 @@ ReplaceImageDialog::ReplaceImageDialog(std::shared_ptr<pw::IPdfBackend> backend,
 
 void ReplaceImageDialog::pickImage() {
     const QString file = QFileDialog::getOpenFileName(
-        this, QStringLiteral("选择新图片"), QFileInfo(source_).absolutePath(),
-        QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff);;所有文件 (*)"));
+        this, TR("选择新图片"), QFileInfo(source_).absolutePath(),
+        TR("图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff);;所有文件 (*)"));
     if (file.isEmpty()) return;
     image_->setText(file);
-    hint_->setText(QStringLiteral("已选择：%1").arg(QFileInfo(file).fileName()));
+    hint_->setText(TR("已选择：%1").arg(QFileInfo(file).fileName()));
 }
 
 void ReplaceImageDialog::pickSelection() {
@@ -656,7 +657,7 @@ void ReplaceImageDialog::fillFromSelection(int page, QRectF rect) {
     x1_->setValue(rect.right());
     y1_->setValue(rect.bottom());
     if (hint_ != nullptr) {
-        hint_->setText(QStringLiteral("已取到第 %1 页的选区：%2,%3 → %4,%5")
+        hint_->setText(TR("已取到第 %1 页的选区：%2,%3 → %4,%5")
                            .arg(page)
                            .arg(rect.left(), 0, 'f', 1)
                            .arg(rect.top(), 0, 'f', 1)
@@ -669,17 +670,17 @@ void ReplaceImageDialog::fillFromSelection(int page, QRectF rect) {
 void ReplaceImageDialog::apply() {
     const QString imagePath = image_->text().trimmed();
     if (imagePath.isEmpty() || !QFileInfo::exists(imagePath)) {
-        QMessageBox::information(this, QStringLiteral("需要图片"),
-                                 QStringLiteral("先选一张存在的图片。"));
+        QMessageBox::information(this, TR("需要图片"),
+                                 TR("先选一张存在的图片。"));
         return;
     }
     pw::RectD rect = rectOf(x0_->value(), y0_->value(), x1_->value(), y1_->value());
     if (rect.empty()) {
-        QMessageBox::information(this, QStringLiteral("选区太小"), QStringLiteral("先框选一个区域。"));
+        QMessageBox::information(this, TR("选区太小"), TR("先框选一个区域。"));
         return;
     }
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("替换结果"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_换图")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("替换结果"),
+                                                     suggestPdfOutput(source_, TR("_换图")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -689,11 +690,11 @@ void ReplaceImageDialog::apply() {
         page_->value() - 1, rect, pw::fsPath(imagePath.toUtf8().toStdString()));
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("替换图片失败"),
+        QMessageBox::warning(this, TR("替换图片失败"),
                              QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已替换第 %1 页图片 -> %2").arg(page_->value()).arg(out));
+    emit logMessage(TR("已替换第 %1 页图片 -> %2").arg(page_->value()).arg(out));
 }
 
 // ===========================================================================
@@ -703,7 +704,7 @@ void ReplaceImageDialog::apply() {
 FormDialog::FormDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& source,
                        PdfViewWidget* viewer, QWidget* parent)
     : QDialog(parent), backend_(std::move(backend)), source_(source), viewer_(viewer) {
-    setWindowTitle(QStringLiteral("表单处理 — %1").arg(QFileInfo(source_).fileName()));
+    setWindowTitle(TR("表单处理 — %1").arg(QFileInfo(source_).fileName()));
     resize(720, 520);
 
     auto* root = new QVBoxLayout(this);
@@ -716,55 +717,55 @@ FormDialog::FormDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& 
     fillTable_ = new QTableWidget(0, 4, fillPage);
     fillTable_->setObjectName(QStringLiteral("formFillTable"));
     fillTable_->setHorizontalHeaderLabels(
-        {QStringLiteral("字段"), QStringLiteral("类型"), QStringLiteral("当前值"), QStringLiteral("要填成的值")});
+        {TR("字段"), TR("类型"), TR("当前值"), TR("要填成的值")});
     fillTable_->horizontalHeader()->setStretchLastSection(true);
     fillLayout->addWidget(fillTable_, 1);
     auto* fillRow = new QHBoxLayout();
-    auto* reload = new QPushButton(QStringLiteral("读取表单字段"), fillPage);
-    auto* fillBtn = new QPushButton(QStringLiteral("填写并另存为…"), fillPage);
+    auto* reload = new QPushButton(TR("读取表单字段"), fillPage);
+    auto* fillBtn = new QPushButton(TR("填写并另存为…"), fillPage);
     fillBtn->setObjectName(QStringLiteral("formFillApply"));
     fillRow->addStretch(1);
     fillRow->addWidget(reload);
     fillRow->addWidget(fillBtn);
     fillLayout->addLayout(fillRow);
-    fillHint_ = new QLabel(QStringLiteral("勾选框填 1/0（也认 on/off），下拉填候选项原文。"), fillPage);
+    fillHint_ = new QLabel(TR("勾选框填 1/0（也认 on/off），下拉填候选项原文。"), fillPage);
     fillHint_->setStyleSheet(QStringLiteral("color:#666;"));
     fillLayout->addWidget(fillHint_);
-    tabs_->addTab(fillPage, QStringLiteral("填写表单"));
+    tabs_->addTab(fillPage, TR("填写表单"));
 
     // ---- 页签二：制作 ----
     auto* createPage = new QWidget(tabs_);
     auto* createLayout = new QVBoxLayout(createPage);
     auto* createForm = new QFormLayout();
     fieldName_ = new QLineEdit(createPage);
-    fieldName_->setPlaceholderText(QStringLiteral("如 customer"));
-    createForm->addRow(QStringLiteral("字段名"), fieldName_);
+    fieldName_->setPlaceholderText(TR("如 customer"));
+    createForm->addRow(TR("字段名"), fieldName_);
     fieldKind_ = new QComboBox(createPage);
-    fieldKind_->addItem(QStringLiteral("文本"), QStringLiteral("text"));
-    fieldKind_->addItem(QStringLiteral("勾选框"), QStringLiteral("checkbox"));
-    fieldKind_->addItem(QStringLiteral("下拉/列表"), QStringLiteral("choice"));
-    createForm->addRow(QStringLiteral("类型"), fieldKind_);
+    fieldKind_->addItem(TR("文本"), QStringLiteral("text"));
+    fieldKind_->addItem(TR("勾选框"), QStringLiteral("checkbox"));
+    fieldKind_->addItem(TR("下拉/列表"), QStringLiteral("choice"));
+    createForm->addRow(TR("类型"), fieldKind_);
     fieldOptions_ = new QLineEdit(createPage);
-    fieldOptions_->setPlaceholderText(QStringLiteral("下拉候选项，用 | 分隔：上海|北京|广州"));
-    createForm->addRow(QStringLiteral("候选项"), fieldOptions_);
+    fieldOptions_->setPlaceholderText(TR("下拉候选项，用 | 分隔：上海|北京|广州"));
+    createForm->addRow(TR("候选项"), fieldOptions_);
 
     auto* pageRow = new QHBoxLayout();
-    pageRow->addWidget(new QLabel(QStringLiteral("页码"), createPage));
+    pageRow->addWidget(new QLabel(TR("页码"), createPage));
     fieldPage_ = new QSpinBox(createPage);
     fieldPage_->setRange(1, 9999);
     pageRow->addWidget(fieldPage_);
-    auto* pick = new QPushButton(QStringLiteral("在预览里框选位置"), createPage);
+    auto* pick = new QPushButton(TR("在预览里框选位置"), createPage);
     pageRow->addWidget(pick);
     pageRow->addStretch(1);
-    createForm->addRow(QStringLiteral("位置"), pageRow);
+    createForm->addRow(TR("位置"), pageRow);
     auto* rectRow = new QHBoxLayout();
     buildRectRow(rectRow, createPage, &fieldX0_, &fieldY0_, &fieldX1_, &fieldY1_, "form");
-    createForm->addRow(QStringLiteral("矩形(pt)"), rectRow);
+    createForm->addRow(TR("矩形(pt)"), rectRow);
     createLayout->addLayout(createForm);
 
     auto* specRow = new QHBoxLayout();
-    auto* addSpec = new QPushButton(QStringLiteral("添加这个字段"), createPage);
-    auto* delSpec = new QPushButton(QStringLiteral("移除选中"), createPage);
+    auto* addSpec = new QPushButton(TR("添加这个字段"), createPage);
+    auto* delSpec = new QPushButton(TR("移除选中"), createPage);
     specRow->addStretch(1);
     specRow->addWidget(addSpec);
     specRow->addWidget(delSpec);
@@ -774,36 +775,36 @@ FormDialog::FormDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& 
     specList_->setObjectName(QStringLiteral("formSpecList"));
     createLayout->addWidget(specList_, 1);
     auto* createRow = new QHBoxLayout();
-    auto* createBtn = new QPushButton(QStringLiteral("生成表单并另存为…"), createPage);
+    auto* createBtn = new QPushButton(TR("生成表单并另存为…"), createPage);
     createBtn->setObjectName(QStringLiteral("formCreateApply"));
     createRow->addStretch(1);
     createRow->addWidget(createBtn);
     createLayout->addLayout(createRow);
-    tabs_->addTab(createPage, QStringLiteral("制作表单"));
+    tabs_->addTab(createPage, TR("制作表单"));
 
     // ---- 页签三：提取 ----
     auto* extractPage = new QWidget(tabs_);
     auto* extractLayout = new QVBoxLayout(extractPage);
     extractTable_ = new QTableWidget(0, 5, extractPage);
     extractTable_->setObjectName(QStringLiteral("formExtractTable"));
-    extractTable_->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("类型"),
-                                              QStringLiteral("值"), QStringLiteral("页"),
-                                              QStringLiteral("位置")});
+    extractTable_->setHorizontalHeaderLabels({TR("字段"), TR("类型"),
+                                              TR("值"), TR("页"),
+                                              TR("位置")});
     extractTable_->horizontalHeader()->setStretchLastSection(true);
     extractLayout->addWidget(extractTable_, 1);
     auto* extractRow = new QHBoxLayout();
-    auto* refresh = new QPushButton(QStringLiteral("刷新"), extractPage);
-    auto* csv = new QPushButton(QStringLiteral("导出 CSV…"), extractPage);
+    auto* refresh = new QPushButton(TR("刷新"), extractPage);
+    auto* csv = new QPushButton(TR("导出 CSV…"), extractPage);
     csv->setObjectName(QStringLiteral("formCsv"));
     extractRow->addStretch(1);
     extractRow->addWidget(refresh);
     extractRow->addWidget(csv);
     extractLayout->addLayout(extractRow);
-    tabs_->addTab(extractPage, QStringLiteral("提取数据"));
+    tabs_->addTab(extractPage, TR("提取数据"));
 
     root->addWidget(tabs_, 1);
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    box->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    box->button(QDialogButtonBox::Close)->setText(TR("关闭"));
     root->addWidget(box);
 
     connect(reload, &QPushButton::clicked, this, &FormDialog::reloadFields);
@@ -826,7 +827,7 @@ FormDialog::FormDialog(std::shared_ptr<pw::IPdfBackend> backend, const QString& 
             fieldX1_->setValue(rect.right());
             fieldY1_->setValue(rect.bottom());
             if (fillHint_ != nullptr) {
-                fillHint_->setText(QStringLiteral("已取到第 %1 页的选区：%2,%3 → %4,%5")
+                fillHint_->setText(TR("已取到第 %1 页的选区：%2,%3 → %4,%5")
                                        .arg(page)
                                        .arg(rect.left(), 0, 'f', 1)
                                        .arg(rect.top(), 0, 'f', 1)
@@ -845,7 +846,7 @@ void FormDialog::reloadFields() {
     auto fields = backend_->formFields(pw::fsPath(source_.toUtf8().toStdString()));
     QApplication::restoreOverrideCursor();
     if (!fields.ok()) {
-        fillHint_->setText(QStringLiteral("读取失败：%1").arg(QString::fromStdString(fields.status().toString())));
+        fillHint_->setText(TR("读取失败：%1").arg(QString::fromStdString(fields.status().toString())));
         return;
     }
     fields_ = fields.value();
@@ -856,11 +857,11 @@ void FormDialog::reloadFields() {
         const pw::FormField& f = fields_[i];
         QString kind;
         switch (f.kind) {
-            case pw::FieldKind::Text: kind = QStringLiteral("文本"); break;
-            case pw::FieldKind::Checkbox: kind = QStringLiteral("勾选"); break;
-            case pw::FieldKind::Choice: kind = QStringLiteral("下拉"); break;
-            case pw::FieldKind::Signature: kind = QStringLiteral("签名"); break;
-            default: kind = QStringLiteral("未知"); break;
+            case pw::FieldKind::Text: kind = TR("文本"); break;
+            case pw::FieldKind::Checkbox: kind = TR("勾选"); break;
+            case pw::FieldKind::Choice: kind = TR("下拉"); break;
+            case pw::FieldKind::Signature: kind = TR("签名"); break;
+            default: kind = TR("未知"); break;
         }
         fillTable_->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(f.name)));
         fillTable_->setItem(i, 1, new QTableWidgetItem(kind));
@@ -877,15 +878,15 @@ void FormDialog::reloadFields() {
                 .arg(f.rect.x1, 0, 'f', 1).arg(f.rect.y1, 0, 'f', 1)));
     }
     fillHint_->setText(fields_.empty()
-                           ? QStringLiteral("这份 PDF 没有表单字段。可以在「制作表单」里新建。")
-                           : QStringLiteral("共 %1 个字段。").arg(fields_.size()));
-    emit logMessage(QStringLiteral("读取到 %1 个表单字段").arg(fields_.size()));
+                           ? TR("这份 PDF 没有表单字段。可以在「制作表单」里新建。")
+                           : TR("共 %1 个字段。").arg(fields_.size()));
+    emit logMessage(TR("读取到 %1 个表单字段").arg(fields_.size()));
 }
 
 void FormDialog::fillForm() {
     if (fields_.empty()) {
-        QMessageBox::information(this, QStringLiteral("没有字段"),
-                                 QStringLiteral("先点「读取表单字段」。"));
+        QMessageBox::information(this, TR("没有字段"),
+                                 TR("先点「读取表单字段」。"));
         return;
     }
     std::vector<pw::FieldValue> values;
@@ -901,12 +902,12 @@ void FormDialog::fillForm() {
         values.push_back(fv);
     }
     if (values.empty()) {
-        QMessageBox::information(this, QStringLiteral("没有要填的值"),
-                                 QStringLiteral("在「要填成的值」列里写点什么。"));
+        QMessageBox::information(this, TR("没有要填的值"),
+                                 TR("在「要填成的值」列里写点什么。"));
         return;
     }
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("填写结果"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_已填")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("填写结果"),
+                                                     suggestPdfOutput(source_, TR("_已填")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -915,22 +916,22 @@ void FormDialog::fillForm() {
                                              pw::fsPath(out.toUtf8().toStdString()), values);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("填写失败"), QString::fromStdString(st.toString()));
+        QMessageBox::warning(this, TR("填写失败"), QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已填写 %1 个字段 -> %2").arg(values.size()).arg(out));
+    emit logMessage(TR("已填写 %1 个字段 -> %2").arg(values.size()).arg(out));
 }
 
 void FormDialog::addFieldSpec() {
     const QString name = fieldName_->text().trimmed();
     if (name.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("需要字段名"), QStringLiteral("给字段起个名字。"));
+        QMessageBox::information(this, TR("需要字段名"), TR("给字段起个名字。"));
         return;
     }
     pw::RectD rect =
         rectOf(fieldX0_->value(), fieldY0_->value(), fieldX1_->value(), fieldY1_->value());
     if (rect.empty()) {
-        QMessageBox::information(this, QStringLiteral("选区太小"), QStringLiteral("先框选或手输一个矩形。"));
+        QMessageBox::information(this, TR("选区太小"), TR("先框选或手输一个矩形。"));
         return;
     }
     const QString kind = fieldKind_->currentData().toString();
@@ -953,12 +954,12 @@ void FormDialog::removeFieldSpec() {
 
 void FormDialog::createForm() {
     if (specList_->count() == 0) {
-        QMessageBox::information(this, QStringLiteral("还没有字段"),
-                                 QStringLiteral("先在上面添加至少一个字段。"));
+        QMessageBox::information(this, TR("还没有字段"),
+                                 TR("先在上面添加至少一个字段。"));
         return;
     }
-    const QString out = QFileDialog::getSaveFileName(this, QStringLiteral("表单输出"),
-                                                     suggestPdfOutput(source_, QStringLiteral("_表单")),
+    const QString out = QFileDialog::getSaveFileName(this, TR("表单输出"),
+                                                     suggestPdfOutput(source_, TR("_表单")),
                                                      QStringLiteral("PDF (*.pdf)"));
     if (out.isEmpty()) return;
 
@@ -990,7 +991,7 @@ void FormDialog::createForm() {
         specs.push_back(spec);
     }
     if (specs.empty()) {
-        QMessageBox::information(this, QStringLiteral("没有有效字段"), QStringLiteral("先添加字段。"));
+        QMessageBox::information(this, TR("没有有效字段"), TR("先添加字段。"));
         return;
     }
 
@@ -999,44 +1000,44 @@ void FormDialog::createForm() {
                                                pw::fsPath(out.toUtf8().toStdString()), specs);
     QApplication::restoreOverrideCursor();
     if (!st.ok()) {
-        QMessageBox::warning(this, QStringLiteral("生成表单失败"),
+        QMessageBox::warning(this, TR("生成表单失败"),
                              QString::fromStdString(st.toString()));
         return;
     }
-    emit logMessage(QStringLiteral("已生成 %1 个可交互字段 -> %2").arg(specs.size()).arg(out));
+    emit logMessage(TR("已生成 %1 个可交互字段 -> %2").arg(specs.size()).arg(out));
 }
 
 void FormDialog::exportCsv() {
     if (fields_.empty()) {
-        QMessageBox::information(this, QStringLiteral("没有数据"),
-                                 QStringLiteral("先点「读取表单字段」。"));
+        QMessageBox::information(this, TR("没有数据"),
+                                 TR("先点「读取表单字段」。"));
         return;
     }
     const QString out = QFileDialog::getSaveFileName(
-        this, QStringLiteral("导出表单数据"),
+        this, TR("导出表单数据"),
         QFileInfo(source_).absolutePath() + QLatin1Char('/') +
-            QFileInfo(source_).completeBaseName() + QStringLiteral("_表单.csv"),
+            QFileInfo(source_).completeBaseName() + TR("_表单.csv"),
         QStringLiteral("CSV (*.csv)"));
     if (out.isEmpty()) return;
 
     // Excel 打开中文 CSV 需要 UTF-8 BOM
     QFile f(out);
     if (!f.open(QIODevice::WriteOnly)) {
-        QMessageBox::warning(this, QStringLiteral("写不了文件"), out);
+        QMessageBox::warning(this, TR("写不了文件"), out);
         return;
     }
     QTextStream ts(&f);
     ts.setEncoding(QStringConverter::Utf8);
     ts << QChar(0xFEFF);
-    ts << QStringLiteral("字段,类型,值,页码,x0,y0,x1,y1\n");
+    ts << TR("字段,类型,值,页码,x0,y0,x1,y1\n");
     for (const pw::FormField& fld : fields_) {
         QString kind;
         switch (fld.kind) {
-            case pw::FieldKind::Text: kind = QStringLiteral("文本"); break;
-            case pw::FieldKind::Checkbox: kind = QStringLiteral("勾选"); break;
-            case pw::FieldKind::Choice: kind = QStringLiteral("下拉"); break;
-            case pw::FieldKind::Signature: kind = QStringLiteral("签名"); break;
-            default: kind = QStringLiteral("未知"); break;
+            case pw::FieldKind::Text: kind = TR("文本"); break;
+            case pw::FieldKind::Checkbox: kind = TR("勾选"); break;
+            case pw::FieldKind::Choice: kind = TR("下拉"); break;
+            case pw::FieldKind::Signature: kind = TR("签名"); break;
+            default: kind = TR("未知"); break;
         }
         ts << QString::fromStdString(fld.name) << ',' << kind << ','
            << QString::fromStdString(fld.value).replace(QLatin1Char(','), QLatin1Char(';')) << ','
@@ -1044,5 +1045,5 @@ void FormDialog::exportCsv() {
            << fld.rect.y1 << '\n';
     }
     f.close();
-    emit logMessage(QStringLiteral("已导出表单数据 -> %1").arg(out));
+    emit logMessage(TR("已导出表单数据 -> %1").arg(out));
 }

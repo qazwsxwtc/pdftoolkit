@@ -40,9 +40,19 @@ set(PDFWORD_UI_SOURCES
 
 # 资源：logo（png 给界面用，ico 给窗口/托盘多尺寸用）+ Windows exe 图标
 # rc 里的相对路径 "pdftoolkit.ico" 靠下面这条 include 目录解析
+#
+# exe 的版本资源（资源管理器“属性→详细信息”、安装器、杀软读的都是它）由模板生成，
+# 版本号同样只认 project(VERSION) 一处，避免和「关于」窗口里的版本对不上。
+string(REPLACE "." ";" PDFWORD_VERSION_PARTS "${PROJECT_VERSION}")
+list(GET PDFWORD_VERSION_PARTS 0 PDFWORD_VERSION_MAJOR)
+list(GET PDFWORD_VERSION_PARTS 1 PDFWORD_VERSION_MINOR)
+list(GET PDFWORD_VERSION_PARTS 2 PDFWORD_VERSION_PATCH)
+set(PDFWORD_UI_RC "${CMAKE_CURRENT_BINARY_DIR}/pdftoolkit.rc")
+configure_file(resources/pdftoolkit.rc.in "${PDFWORD_UI_RC}" @ONLY)
+
 set(PDFWORD_UI_RESOURCES
     resources/icons.qrc
-    resources/pdftoolkit.rc
+    ${PDFWORD_UI_RC}
 )
 
 add_executable(pdfword_ui WIN32
@@ -51,7 +61,7 @@ add_executable(pdfword_ui WIN32
     ${PDFWORD_UI_RESOURCES}
 )
 # rc.exe 不会去源目录找图标，显式把 resources 目录交给它
-set_source_files_properties(resources/pdftoolkit.rc PROPERTIES
+set_source_files_properties(${PDFWORD_UI_RC} PROPERTIES
     INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/resources")
 # 产物文件名 = 产品名：pdftoolkit.exe（target 名保持 pdfword_ui，脚本与冒烟引用不用动）
 set_target_properties(pdfword_ui PROPERTIES OUTPUT_NAME "pdftoolkit")
