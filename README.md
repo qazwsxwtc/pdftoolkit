@@ -1,5 +1,7 @@
 # Pdf-Toolkit
 
+**简体中文** | [English](README_EN.md)
+
 C++ + Qt 的 PDF / Word 转换与预览工具。**核心能力全部在被 Qt 隔离的 `core` 里**，
 Qt 只负责界面，同一条链路另有 CLI 和 C ABI 两种入口，方便以后直接套 web 壳。
 
@@ -219,7 +221,7 @@ form-dialog` **二十六张图**可以直接打开看布局，
 | 预览 | 仅对 PDF 可用，效果同双击 |
 | 删除 | 从列表移除选中的条目（可多选）——**只动列表，磁盘上的文件不动**，日志会写明删了几个 |
 | 清空 | 清空整个待处理列表——同样**不动磁盘文件** |
-| 重命名文件… | 改磁盘上的真实文件名（仅单选时可用）。新名字里 `\ / : * ? " < > |` 与结尾空格/句点会被本地拦下；目标已存在则拒绝；成功后列表文本/`Qt::UserRole`/tooltip 一起更新，若该文件正在预览就自动重开新路径 |
+| 重命名文件… | 改磁盘上的真实文件名（仅单选时可用）。新名字里 `\ / : * ? " < > \|` 与结尾空格/句点会被本地拦下；目标已存在则拒绝；成功后列表文本/`Qt::UserRole`/tooltip 一起更新，若该文件正在预览就自动重开新路径 |
 
 **菜单结构**
 
@@ -383,6 +385,39 @@ PDF 里的“书签”和“目录”是同一个东西（文档里那棵 `/Outl
 `页面编辑…` 里那张“输出页顺序”列表就是最终 PDF 的页序列：删页 = 从列表删掉一条，
 重排 = 挪动列表项，旋转/裁剪 = 给该条打标记，保存时才真正写文件。按 `Esc` 或 `关闭`
 不会改动源文件。
+
+## 打包与安装包
+
+一条命令出两个交付物（`packaging\build-installer.ps1`）：
+
+```powershell
+# 前提：publish\ 已经 windeployqt 部署过（界面 exe + Qt DLL + 插件目录齐全）
+pwsh -File packaging\build-installer.ps1
+```
+
+| 产物 | 内容 | 用途 |
+| --- | --- | --- |
+| `dist\Pdf-Toolkit-<ver>-win64-portable.zip` | 主程序 + 运行库（目录结构原样） | 绿色版，解压双击 `pdftoolkit.exe` 就能用 |
+| `dist\Pdf-Toolkit-<ver>-win64-setup.exe` | Inno Setup 编译的单文件安装包 | 常规安装：向导、开始菜单 / 桌面快捷方式、卸载项 |
+
+细节：
+
+- 版本号自动从 `CMakeLists.txt` 的 `project(Pdf-Toolkit VERSION …)` 读，跟「关于」窗口显示的
+  是同一个值，不用改两处。
+- 打包只带**界面程序**：`pdfword_cli.exe` / `pdfword.dll` 不进包（它们是给命令行和 web 壳的，
+  要一起发就改 `build-installer.ps1` 里的 `$exclude`）。
+- 安装默认落 `%LOCALAPPDATA%\Programs\Pdf-Toolkit`，`PrivilegesRequired=lowest`，
+  **不弹 UAC**。要装进 Program Files，把 `packaging\pdftoolkit.iss` 的
+  `PrivilegesRequired` 改成 `admin`。
+- 安装界面中英双语（`packaging\langs\ChineseSimplified.isl` 是 Inno 官方仓库的翻译，
+  安装时按系统语言自动选）。
+- 安装包图标用 `ui\resources\pdftoolkit.ico`，和程序图标同一个。
+- 只重编安装包、跳过 zip：`pwsh -File packaging\build-installer.ps1 -SkipPortable`。
+- 静默装到指定目录（自测用）：
+
+  ```powershell
+  .\dist\Pdf-Toolkit-0.0.1-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
+  ```
 
 ## 当前状态（说清楚哪些是真跑通了，哪些还没）
 

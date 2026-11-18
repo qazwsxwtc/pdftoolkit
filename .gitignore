@@ -47,6 +47,11 @@ object_script.*
 # ---- 分发副本（windeployqt 拷出来的 exe / dll / plugins 都不入库）----
 publish/
 
+# ---- 打包产物与中间件（packaging 里的 iss / 脚本 / 语言包入库，_app 与 dist 不入库）----
+dist/
+packaging/_app/
+packaging/_build/
+
 # ---- 冒烟截图与测试产物 ----
 ui-shots/
 ui-shots-*/
