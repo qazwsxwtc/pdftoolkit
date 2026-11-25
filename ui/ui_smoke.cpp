@@ -168,8 +168,8 @@ int main(int argc, char** argv) {
     // 旧的合并式窗口已拆掉，菜单里不应再出现"文档工具"
     check(!actions.contains(TR("文档工具…")), TR("PDF 工具菜单里不再有“文档工具…”"));
     check(actions.contains(TR("关于 Pdf-Toolkit…")), TR("帮助菜单里有“关于 Pdf-Toolkit…”"));
-    check(QString::fromLatin1(PDFWORD_APP_VERSION) == QStringLiteral("0.0.2"),
-          TR("关于窗口写的版本号是 0.0.2"));
+    check(QString::fromLatin1(PDFWORD_APP_VERSION) == QStringLiteral("0.0.3"),
+          TR("关于窗口写的版本号是 0.0.3"));
 
     // 视图菜单是两级：文件列表（靠左/靠右）、日志窗口（显示/隐藏）
     auto* fileListMenu = window.findChild<QMenu*>(QStringLiteral("menuFileList"));

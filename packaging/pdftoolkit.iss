@@ -1,6 +1,6 @@
 ﻿; Pdf-Toolkit 安装包脚本（Inno Setup 6.7.3）
 ; 用法：ISCC.exe packaging\pdftoolkit.iss
-; 产物：dist\Pdf-Toolkit-0.0.2-win64-setup.exe
+; 产物：dist\Pdf-Toolkit-0.0.3-win64-setup.exe
 ;
 ; 默认装到 %LOCALAPPDATA%\Programs\Pdf-Toolkit（PrivilegesRequired=lowest，不弹 UAC）。
 ; 要改成装进 Program Files，把 PrivilegesRequired 改成 admin 即可。
@@ -10,7 +10,7 @@
 
 #define MyAppName "Pdf-Toolkit"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.0.2"
+  #define MyAppVersion "0.0.3"
 #endif
 #define MyAppPublisher "wangtc"
 #define MyAppExeName "pdftoolkit.exe"
@@ -31,7 +31,7 @@ OutputBaseFilename=Pdf-Toolkit-{#MyAppVersion}-win64-setup
 SetupIconFile=..\ui\resources\pdftoolkit.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
-VersionInfoVersion=0.0.2.0
+VersionInfoVersion=0.0.3.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} installer
 VersionInfoProductName={#MyAppName}

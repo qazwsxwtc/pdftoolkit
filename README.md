@@ -353,7 +353,7 @@ form-dialog` **二十六张图**可以直接打开看布局，
 | 编辑与批注(&E) | 修改文字、图片… / 注释批注… / 添加超链接… / 查找替换… / 表单处理… | 见下节「编辑与批注菜单项」 |
 | 视图(&V) | **两级子菜单**：`文件列表 ▸`（显示文件列表 / 隐藏文件列表 ‖ 靠左 / 靠右）+ `日志窗口 ▸`（显示 / 隐藏）+ `书签目录 ▸`（显示书签目录 / 隐藏书签目录）+ `缩放 ▸`（放大一档 / 缩小一档 ‖ 适应宽度 / 适应窗口 / 实际大小 100%） | 文件面板显隐与停靠位置（也可直接把面板拖成浮动窗口）；日志窗口显隐；书签面板显隐；缩放与适应 |
 | 帮助(&H) | 能力报告 | 弹出后端 / LibreOffice / OCR 诊断（LibreOffice 版本取自缓存，还没转换过就写"未检测"） |
-| 帮助(&H) | 关于 Pdf-Toolkit… | 简介 + 版本号（取自 `project(Pdf-Toolkit VERSION …)`，现为 0.0.2）+ 联系人 / 邮箱（邮箱可点，走默认邮件客户端） |
+| 帮助(&H) | 关于 Pdf-Toolkit… | 简介 + 版本号（取自 `project(Pdf-Toolkit VERSION …)`，现为 0.0.3）+ 联系人 / 邮箱（邮箱可点，走默认邮件客户端） |
 
 **PDF 工具菜单项**
 
@@ -536,7 +536,7 @@ pwsh -File packaging\build-installer.ps1
 - 静默装到指定目录（自测用）：
 
   ```powershell
-  .\dist\Pdf-Toolkit-0.0.2-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
+  .\dist\Pdf-Toolkit-0.0.3-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
   ```
 
 ### PDF 关联：右键「打开方式」里出现 Pdf-Toolkit

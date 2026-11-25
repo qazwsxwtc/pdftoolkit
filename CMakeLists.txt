@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 # 产品名 Pdf-Toolkit；界面产物文件名是 pdftoolkit.exe（target 名仍为 pdfword_ui，避免动脚本与 web 壳）
-project(Pdf-Toolkit VERSION 0.0.2 LANGUAGES CXX)
+project(Pdf-Toolkit VERSION 0.0.3 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # 顶层开关。core 永远不依赖 Qt，所以即使不装 Qt 也能单独构建 CLI / C 库。

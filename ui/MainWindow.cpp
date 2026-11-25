@@ -1310,7 +1310,7 @@ void MainWindow::showAboutDialog() {
 #ifdef PDFWORD_APP_VERSION
     const QString version = QStringLiteral(PDFWORD_APP_VERSION);
 #else
-    const QString version = QStringLiteral("0.0.2");
+    const QString version = QStringLiteral("0.0.3");
 #endif
 
     QMessageBox box(this);

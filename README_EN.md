@@ -417,7 +417,7 @@ selects it first):
 | Edit & Annotate(&E) | Edit text & images… / Annotations… / Add hyperlink… / Find & replace… / Forms… | See "Edit & Annotate menu items" below |
 | View(&V) | **Two-level submenus**: `File list ▸` (show / hide ‖ left / right) + `Log window ▸` (show / hide) + `Bookmarks ▸` (show / hide) + `Zoom ▸` (zoom in / zoom out ‖ fit width / fit window / actual size 100%) | Panel visibility and dock side (you can also drag the panel out into a floating window); log visibility; bookmark panel visibility; zoom and fit |
 | Help(&H) | Capability report | Shows backend / LibreOffice / OCR diagnostics (the LibreOffice version comes from the cache; before the first conversion it says "not detected") |
-| Help(&H) | About Pdf-Toolkit… | Short description + version (taken from `project(Pdf-Toolkit VERSION …)`, currently 0.0.2) + contact / e-mail (the e-mail is a link that opens the default mail client) |
+| Help(&H) | About Pdf-Toolkit… | Short description + version (taken from `project(Pdf-Toolkit VERSION …)`, currently 0.0.3) + contact / e-mail (the e-mail is a link that opens the default mail client) |
 
 **PDF Tools menu items**
 
@@ -634,7 +634,7 @@ Details:
 - Silent install into a given directory (for self-testing):
 
   ```powershell
-  .\dist\Pdf-Toolkit-0.0.2-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
+  .\dist\Pdf-Toolkit-0.0.3-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
   ```
 
 ### PDF association: showing up in the right-click "Open with" menu
