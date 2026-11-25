@@ -1,5 +1,9 @@
 # Pdf-Toolkit
 
+<p align="center">
+  <img src="ui/resources/pdftoolkit.png" width="128" alt="Pdf-Toolkit logo">
+</p>
+
 **简体中文** | [English](README_EN.md)
 
 C++ + Qt 的 PDF / Word 转换与预览工具。**核心能力全部在被 Qt 隔离的 `core` 里**，
