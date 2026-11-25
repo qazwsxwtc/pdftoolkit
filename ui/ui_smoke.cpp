@@ -168,8 +168,33 @@ int main(int argc, char** argv) {
     // 旧的合并式窗口已拆掉，菜单里不应再出现"文档工具"
     check(!actions.contains(TR("文档工具…")), TR("PDF 工具菜单里不再有“文档工具…”"));
     check(actions.contains(TR("关于 Pdf-Toolkit…")), TR("帮助菜单里有“关于 Pdf-Toolkit…”"));
-    check(QString::fromLatin1(PDFWORD_APP_VERSION) == QStringLiteral("0.0.3"),
-          TR("关于窗口写的版本号是 0.0.3"));
+    check(actions.contains(TR("检查更新…")), TR("帮助菜单里有“检查更新…”"));
+    check(QString::fromLatin1(PDFWORD_APP_VERSION) == QStringLiteral("0.0.4"),
+          TR("关于窗口写的版本号是 0.0.4"));
+
+    // 版本检查只比版本号、不比字符串：v 前缀要忽略，"0.0.10" 要大于 "0.0.9"
+    check(UpdateChecker::isNewer(QStringLiteral("v0.0.4"), QStringLiteral("0.0.3")),
+          TR("版本号比较：v0.0.4 比 0.0.3 新"));
+    check(!UpdateChecker::isNewer(QStringLiteral("V0.0.3"), QStringLiteral("0.0.3")),
+          TR("版本号比较：V0.0.3 与 0.0.3 相同（不提示）"));
+    check(!UpdateChecker::isNewer(QStringLiteral("0.0.2"), QStringLiteral("0.0.3")),
+          TR("版本号比较：旧版本不会提示升级"));
+    check(UpdateChecker::isNewer(QStringLiteral("0.0.10"), QStringLiteral("0.0.9")),
+          TR("版本号比较：0.0.10 大于 0.0.9（不按字符串比）"));
+    check(!UpdateChecker::isNewer(QStringLiteral("0.0.3-beta"), QStringLiteral("0.0.3")),
+          TR("版本号比较：同号预发布版不算更新"));
+    if (UpdateChecker::currentIsPrerelease()) {
+        UpdateChecker::Release formal;
+        formal.version = QStringLiteral("0.0.3");
+        formal.prerelease = false;
+        UpdateChecker::Release pre;
+        pre.version = QStringLiteral("0.0.3");
+        pre.prerelease = true;
+        check(UpdateChecker::isUpgrade(formal, QStringLiteral("0.0.3")),
+              TR("预发布版构建：同号正式版出现时提示切换"));
+        check(!UpdateChecker::isUpgrade(pre, QStringLiteral("0.0.3")),
+              TR("预发布版构建：同号预发布版不重复提示"));
+    }
 
     // 视图菜单是两级：文件列表（靠左/靠右）、日志窗口（显示/隐藏）
     auto* fileListMenu = window.findChild<QMenu*>(QStringLiteral("menuFileList"));

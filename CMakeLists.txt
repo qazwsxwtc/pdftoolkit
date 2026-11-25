@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 # 产品名 Pdf-Toolkit；界面产物文件名是 pdftoolkit.exe（target 名仍为 pdfword_ui，避免动脚本与 web 壳）
-project(Pdf-Toolkit VERSION 0.0.3 LANGUAGES CXX)
+project(Pdf-Toolkit VERSION 0.0.4 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # 顶层开关。core 永远不依赖 Qt，所以即使不装 Qt 也能单独构建 CLI / C 库。
@@ -10,6 +10,9 @@ option(PDFWORD_BUILD_CLI "构建命令行工具" ON)
 option(PDFWORD_BUILD_CAPI "构建 C ABI 动态库（供 web 壳调用）" ON)
 option(PDFWORD_BUILD_TESTS "构建测试" ON)
 option(PDFWORD_WITH_MUPDF "链接 MuPDF 实现真实 PDF 能力" OFF)
+# 发布通道：现在 GitHub 上发的是 prerelease；开始发正式版时设 OFF。
+# 打开时版本检查会收预发布版，并把同号的正式版也当作升级（预发布 → 正式版）。
+option(PDFWORD_PRERELEASE "当前构建按 GitHub prerelease 发布" ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

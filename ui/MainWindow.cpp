@@ -14,6 +14,7 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDir>
+#include <QDesktopServices>
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -41,6 +42,7 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QToolBar>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <filesystem>
@@ -172,6 +174,22 @@ MainWindow::MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr
     createCentral();
     createFileDock();
     createBookmarkDock();
+
+    // 版本检查器要先于菜单建好，菜单里的「检查更新…」直接用它
+    updater_ = new UpdateChecker(this);
+    connect(updater_, &UpdateChecker::updateAvailable, this, &MainWindow::showUpdateAvailable);
+    // 下面两个信号只在手动检查时才会发（静默检查没新版本就一声不吭）
+    connect(updater_, &UpdateChecker::noUpdate, this, [this](const QString&) {
+        QMessageBox::information(this, TR("检查更新"),
+                                 TR("已经是最新版本（%1）。").arg(UpdateChecker::currentVersion()));
+    });
+    connect(updater_, &UpdateChecker::failed, this, [this](const QString& reason) {
+        QMessageBox::warning(
+            this, TR("检查更新"),
+            TR("检查更新失败：%1；可以稍后再试，或直接访问 %2")
+                .arg(reason, QStringLiteral("https://github.com/qazwsxwtc/pdftoolkit/releases")));
+    });
+
     createMenus();
 
     connect(fileList_, &QListWidget::itemDoubleClicked, this, &MainWindow::previewSelected);
@@ -193,6 +211,9 @@ MainWindow::MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr
 
     // 上一次退出时的视图状态（面板显隐/停靠侧/日志高度/窗口几何）优先于默认值
     restoreViewState();
+
+    // 启动后静默查一次版本：有新版才弹，没新版/网络不通都不打扰用户
+    QTimer::singleShot(3000, this, [this] { checkForUpdates(false); });
 }
 
 MainWindow::~MainWindow() {
@@ -1228,6 +1249,7 @@ void MainWindow::createMenus() {
     // ---- 帮助 ----
     auto* helpMenu = menuBar()->addMenu(TR("帮助(&H)"));
     helpMenu->addAction(TR("能力报告"), this, &MainWindow::showCapabilityReport);
+    helpMenu->addAction(TR("检查更新…"), this, [this] { checkForUpdates(true); });
     helpMenu->addSeparator();
     helpMenu->addAction(TR("关于 Pdf-Toolkit…"), this, &MainWindow::showAboutDialog);
 
@@ -1307,11 +1329,7 @@ void MainWindow::applySession(const Session& session) {
 
 void MainWindow::showAboutDialog() {
     // 版本号来自 CMake 的 project(VERSION)；改版本只动 CMakeLists，这里自动跟上
-#ifdef PDFWORD_APP_VERSION
-    const QString version = QStringLiteral(PDFWORD_APP_VERSION);
-#else
-    const QString version = QStringLiteral("0.0.3");
-#endif
+    const QString version = UpdateChecker::currentVersion();
 
     QMessageBox box(this);
     box.setWindowTitle(TR("关于 Pdf-Toolkit"));
@@ -1339,6 +1357,47 @@ void MainWindow::showAboutDialog() {
     box.setStandardButtons(QMessageBox::Ok);
     if (auto* ok = box.button(QMessageBox::Ok)) ok->setText(TR("知道了"));
     box.exec();
+}
+
+void MainWindow::checkForUpdates(bool interactive) {
+    if (updater_ == nullptr) return;
+    if (interactive) appendLog(TR("正在检查更新…"));
+    updater_->check(interactive);
+}
+
+void MainWindow::showUpdateAvailable(const UpdateChecker::Release& release) {
+    QMessageBox box(this);
+    box.setWindowTitle(TR("发现新版本"));
+    box.setIcon(QMessageBox::Information);
+    box.setTextFormat(Qt::RichText);
+
+    const QString current = UpdateChecker::currentVersion();
+    const bool sameVersion = (release.version == current);
+
+    QString text = sameVersion ? TR("<b>正式版 %1 已发布</b>").arg(release.version)
+                               : TR("<b>发现新版本 %1</b>").arg(release.version);
+    if (!sameVersion && release.prerelease) text += TR("（预发布版）");
+    text += QStringLiteral("<br/>");
+    text += sameVersion
+                ? TR("当前 %1 是预发布版，正式版已发布，建议换成正式版。").arg(current)
+                : TR("当前版本 %1，最新版本 %2，可以升级。").arg(current, release.version);
+    if (!release.assetName.isEmpty()) {
+        text += QStringLiteral("<br/>");
+        text += TR("安装包：%1（%2 MB）")
+                    .arg(release.assetName, QString::number(release.assetSize / 1024.0 / 1024.0, 'f', 0));
+    }
+    box.setText(text);
+    box.setInformativeText(TR("下载地址：%1").arg(release.downloadUrl));
+
+    auto* download = box.addButton(TR("前往下载"), QMessageBox::AcceptRole);
+    box.addButton(TR("稍后"), QMessageBox::RejectRole);
+    box.exec();
+
+    if (box.clickedButton() == download && !release.downloadUrl.isEmpty() &&
+        !QDesktopServices::openUrl(QUrl(release.downloadUrl))) {
+        QMessageBox::warning(this, TR("检查更新"),
+                             TR("打不开浏览器，请手动访问：%1").arg(release.downloadUrl));
+    }
 }
 
 void MainWindow::dockFileList(bool rightSide) {

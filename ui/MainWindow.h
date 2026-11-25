@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "UpdateChecker.h"
 #include "pdfword/converter.hpp"
 #include "pdfword/i18n.hpp"
 #include "pdfword/job.hpp"
@@ -91,6 +92,9 @@ private slots:
     void openForm();
     void showCapabilityReport();
     void showAboutDialog();
+    // 检查更新：interactive=false 是启动时的静默检查（没新版本就不吭声）
+    void checkForUpdates(bool interactive);
+    void showUpdateAvailable(const UpdateChecker::Release& release);
     // 界面语言：跟随系统 / 简体中文 / English。切换后立刻生效（整窗重建，会话搬过去）。
     void switchLanguage(pw::i18n::Lang lang);
     // ---- 预览里"就地编辑"：右键选动作 → 在页面上拖一下 → 直接写回并刷新预览 ----
@@ -202,6 +206,8 @@ private:
     int lastLogHeight_ = 140;
     // 当前打开的「编辑与批注」窗口。非模态，弹着的时候主窗口照常能点、预览照常能滚
     QPointer<QDialog> editDialog_;
+    // GitHub Releases 的版本检查器（启动时静默查一次 + 帮助菜单手动查）
+    UpdateChecker* updater_ = nullptr;
     // 预览里正等着框选的那个编辑动作（0 = 没有；取值见 MainWindow.cpp 的 InlineAction）
     int inlineAction_ = 0;
     // 冒烟用：非空时 applyInlineEdit 不弹输入框，直接用这里的文本

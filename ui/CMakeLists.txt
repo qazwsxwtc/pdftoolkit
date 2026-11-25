@@ -1,7 +1,7 @@
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent Network)
 
 # 主程序和冒烟测试共用同一份界面源码清单（五个文档级工具是各自独立的对话框）
 set(PDFWORD_UI_SOURCES
@@ -37,6 +37,8 @@ set(PDFWORD_UI_SOURCES
     DropListWidget.h
     AppIcon.cpp
     AppIcon.h
+    UpdateChecker.cpp
+    UpdateChecker.h
     DialogCommon.h
 )
 
@@ -68,9 +70,13 @@ set_source_files_properties(${PDFWORD_UI_RC} PROPERTIES
 # 产物文件名 = 产品名：pdftoolkit.exe（target 名保持 pdfword_ui，脚本与冒烟引用不用动）
 set_target_properties(pdfword_ui PROPERTIES OUTPUT_NAME "pdftoolkit")
 
-target_link_libraries(pdfword_ui PRIVATE Qt6::Widgets Qt6::Concurrent pdfword_core)
+target_link_libraries(pdfword_ui PRIVATE Qt6::Widgets Qt6::Concurrent Qt6::Network pdfword_core)
 # 「关于」窗口里的版本号取自 project(VERSION)，只改 CMakeLists 一处
 target_compile_definitions(pdfword_ui PRIVATE PDFWORD_APP_VERSION="${PROJECT_VERSION}")
+# 发布通道：prerelease 构建收预发布版更新，也能识别"同号正式版已发布"
+if(PDFWORD_PRERELEASE)
+    target_compile_definitions(pdfword_ui PRIVATE PDFWORD_APP_PRERELEASE=1)
+endif()
 
 # 界面冒烟测试：真实构造主窗口与各对话框，验证菜单/停靠/校验逻辑不崩。
 # 默认不编；要跑时加 -DPDFWORD_BUILD_UI_SMOKE=ON 并构建 pdfword_ui_smoke。
@@ -81,8 +87,11 @@ if(PDFWORD_BUILD_UI_SMOKE)
         ${PDFWORD_UI_SOURCES}
         resources/icons.qrc        # 冒烟也要能取到 logo（不链 rc，冒烟不需要 exe 图标）
     )
-    target_link_libraries(pdfword_ui_smoke PRIVATE Qt6::Widgets Qt6::Concurrent pdfword_core)
+    target_link_libraries(pdfword_ui_smoke PRIVATE Qt6::Widgets Qt6::Concurrent Qt6::Network pdfword_core)
 target_compile_definitions(pdfword_ui_smoke PRIVATE PDFWORD_APP_VERSION="${PROJECT_VERSION}")
+    if(PDFWORD_PRERELEASE)
+        target_compile_definitions(pdfword_ui_smoke PRIVATE PDFWORD_APP_PRERELEASE=1)
+    endif()
     if(MSVC)
         target_compile_options(pdfword_ui_smoke PRIVATE /utf-8)
     endif()
