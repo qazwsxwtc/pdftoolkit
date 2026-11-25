@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -50,8 +51,17 @@ public:
     static std::string extensionFromFilter(const std::string& filter);
 
 private:
+    // 并发隔离：每次 convert 独占一个 profile，跑完归还池子复用。
+    // 同时跑的多个 soffice 各用各的 profile，不会抢同一把 profile 锁；
+    // 顺序调用则复用已建好的 warm profile，省掉重复冷启动。
+    fs::path acquireProfile();
+    void releaseProfile(const fs::path& profile);
+
     Config config_;
     mutable std::string versionCache_;
+    std::mutex profileMutex_;
+    std::vector<fs::path> freeProfiles_;   // 空闲可复用的 profile 目录
+    int profileCount_ = 0;                 // 已创建的 profile 总数
 };
 
 }  // namespace pw

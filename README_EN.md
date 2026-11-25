@@ -637,6 +637,39 @@ Details:
   .\dist\Pdf-Toolkit-0.0.2-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
   ```
 
+### PDF association: showing up in the right-click "Open with" menu
+
+The wizard has a task **"Add Pdf-Toolkit to the Open with menu for PDF files"** (checked by default;
+`/TASKS="pdfassoc"` for silent installs). After installing:
+
+- right-click a `.pdf` → *Open with* lists **Pdf-Toolkit**, with the program's own logo as its icon;
+- Windows *Default apps* also offers it as a candidate for the default PDF handler.
+
+**It only registers itself as a candidate and never takes over your current default** — on purpose:
+an installer should not change your default apps behind your back. If you install a second copy over
+the same `Applications\pdftoolkit.exe`, the later path wins.
+
+Three registry locations are touched (`HKCU\Software\Classes` when `PrivilegesRequired=lowest`):
+
+| Key | Purpose |
+| --- | --- |
+| `Applications\pdftoolkit.exe` (`FriendlyAppName` + `DefaultIcon` + `shell\open\command`) | how the "Open with" list recognises this exe; the name shown is `Pdf-Toolkit` |
+| value `PdfToolkit.Document` under `.pdf\OpenWithProgids` | attaches our ProgId to `.pdf` candidates |
+| `PdfToolkit.Document` (type name / icon / open command) | the ProgId itself; the command is `"<install dir>\pdftoolkit.exe" "%1"` |
+
+Uninstall removes only its own entries (`Applications\pdftoolkit.exe` and `PdfToolkit.Document` as
+whole keys, and just the `PdfToolkit.Document` value from `.pdf\OpenWithProgids`); candidates
+registered by other programs are left untouched.
+
+The installer sets `ChangesAssociations=yes`, so the Shell association cache is refreshed right away;
+a few machines still need a re-login or a restart of Explorer.
+
+**The open command passes a file on the command line**: `pdftoolkit.exe "C:\a.pdf"`. On startup the
+program adds every file from the command line to the pending list and previews the first PDF;
+opening several files at once works too (arguments are read with the wide-character
+`CommandLineToArgvW`, so Chinese / Japanese / Arabic paths are never mangled). Dropping a file onto
+the `pdftoolkit.exe` icon or its shortcut behaves the same.
+
 ## Current status (what really works and what does not)
 
 Everything marked "verified" was run on a real machine against `build\mupdf`

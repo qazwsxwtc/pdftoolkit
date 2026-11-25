@@ -48,6 +48,7 @@
 
 #include "CompressDialog.h"
 #include "ConvertDialog.h"
+#include "BatchDialog.h"
 #include "DropListWidget.h"
 #include "ExtractDialog.h"
 #include "ImageToPdfDialog.h"
@@ -185,11 +186,9 @@ MainWindow::MainWindow(std::shared_ptr<pw::Converter> converter, std::shared_ptr
             this, [this, info] { applyJob(info); }, Qt::QueuedConnection);
     });
 
-    // 状态栏常驻显示依赖状态，一眼能看出是"没装 LibreOffice"还是"没编 MuPDF"。
-    // 用常驻 label 而不是 showMessage：showMessage 是临时消息，会被底部导航条/进度条那一行挤掉。
-    std::string report = converter_->capabilityReport();
-    std::string firstLine = report.substr(0, report.find('\n'));
-    if (statusLabel_ != nullptr) statusLabel_->setText(QString::fromStdString(firstLine));
+    // 状态栏不再常驻"PDF 后端 / LibreOffice"这类提示；能力详情看日志首屏或菜单里
+    // 的"能力报告"。日志只写一次报告，方便排错但不在界面上常驻显示。
+    const std::string report = converter_->capabilityReport();
     appendLog(QString::fromStdString(report));
 
     // 上一次退出时的视图状态（面板显隐/停靠侧/日志高度/窗口几何）优先于默认值
@@ -229,13 +228,9 @@ void MainWindow::createCentral() {
 
     setCentralWidget(central);
 
-    // 底部最下面这一行统一定居：左边常驻后端状态文字，中间/右边是导航按钮，最右是 0% 进度条。
+    // 底部最下面这一行统一定居：导航按钮和 0% 进度条都靠右，左边留空。
     // 这样"上一页/下一页/放大/缩小/页码/百分比"和进度条同排，预览区不再被单独占一行。
     statusBar()->setMinimumHeight(30);
-    statusLabel_ = new QLabel(this);
-    statusLabel_->setObjectName(QStringLiteral("backendState"));
-    statusLabel_->setText(TR("PDF 后端: 检测中…"));
-    statusBar()->addWidget(statusLabel_, 1);
     if (QWidget* nav = viewer_->navBar()) {
         // 不给 stretch：只按自身宽度排在进度条左边，左边剩下的是状态文字
         statusBar()->addPermanentWidget(nav);
@@ -1081,6 +1076,24 @@ void MainWindow::createMenus() {
     pdfMenu->addAction(TR("图片转 PDF…"), this, &MainWindow::openImageToPdf);
     pdfMenu->addAction(TR("OCR 文字识别…"), this, &MainWindow::openOcr);
 
+    // ---- 批量：七类操作各开一个批量窗口（线程池并行，一线程一文件）----
+    auto* batchMenu = menuBar()->addMenu(TR("批量(&B)"));
+    batchMenu->setObjectName(QStringLiteral("menuBatch"));
+    batchMenu->addAction(TR("批量拆分 PDF…"), this,
+                         [this] { openBatch(static_cast<int>(BatchOp::Split)); });
+    batchMenu->addAction(TR("批量抽取页面…"), this,
+                         [this] { openBatch(static_cast<int>(BatchOp::Extract)); });
+    batchMenu->addAction(TR("批量元数据…"), this,
+                         [this] { openBatch(static_cast<int>(BatchOp::Metadata)); });
+    batchMenu->addAction(TR("批量加密 / 解密…"), this,
+                         [this] { openBatch(static_cast<int>(BatchOp::Security)); });
+    batchMenu->addAction(TR("批量压缩…"), this,
+                         [this] { openBatch(static_cast<int>(BatchOp::Compress)); });
+    batchMenu->addAction(TR("批量水印…"), this,
+                         [this] { openBatch(static_cast<int>(BatchOp::Watermark)); });
+    batchMenu->addAction(TR("批量 OCR 文字识别…"), this,
+                         [this] { openBatch(static_cast<int>(BatchOp::Ocr)); });
+
     // ---- 编辑与批注 ----
     // 五项各开一个窗口；改文字/图片拆成"文字"和"图片"两条路径，由同一个入口选择
     auto* editMenu = menuBar()->addMenu(TR("编辑与批注(&E)"));
@@ -1478,6 +1491,32 @@ int MainWindow::addPathsToFileList(const QStringList& paths) {
     return added;
 }
 
+// 命令行进来的文件（打开方式 / 双击 PDF / 拖到 exe 上）：
+// 入列后挑第一个 PDF 预览，其余留在列表里等用户自己点。
+void MainWindow::openFilesFromCommandLine(const QStringList& paths) {
+    if (paths.isEmpty() || fileList_ == nullptr) return;
+
+    // 先入列（内部已做扩展名过滤与去重），再把列表里第一个 PDF 预览出来
+    addPathsToFileList(paths);
+
+    const QString firstPdf = [this]() -> QString {
+        for (int i = 0; i < fileList_->count(); ++i) {
+            const QString p = fileList_->item(i)->data(Qt::UserRole).toString();
+            if (fileExt(p) == QStringLiteral("pdf") && QFileInfo::exists(p)) return p;
+        }
+        return QString();
+    }();
+    if (firstPdf.isEmpty()) return;
+
+    for (int i = 0; i < fileList_->count(); ++i) {
+        if (fileList_->item(i)->data(Qt::UserRole).toString() == firstPdf) {
+            fileList_->setCurrentRow(i);
+            break;
+        }
+    }
+    previewPath(firstPdf);
+}
+
 void MainWindow::previewPath(const QString& path) {
     if (fileExt(path) != QStringLiteral("pdf")) return;
     QString error;
@@ -1658,10 +1697,12 @@ void MainWindow::previewSelected() {
 }
 
 void MainWindow::startConversion() {
-    const QStringList files = selectedFiles();
+    QStringList files = selectedFiles();
     if (files.isEmpty()) {
-        appendLog(TR("没有可转换的文件：先在待处理文件里添加文件"));
-        return;
+        // 列表空时不再只写日志：弹提示，让用户先把文件加到主界面的文件列表里
+        if (!promptAddFilesFirst()) return;
+        files = selectedFiles();
+        if (files.isEmpty()) return;
     }
 
     // 选好文件后弹目标格式（不直接在主界面猜"用户想要什么格式"）
@@ -1817,15 +1858,56 @@ void MainWindow::extractPages() {
     statusBar()->showMessage(TR("抽取完成: ") + dlg.outputPath(), 5000);
 }
 
+bool MainWindow::promptAddFilesFirst() {
+    // 列表被隐藏时先把面板露出来：提示里让用户"在主界面的文件列表里添加文件"，
+    // 面板藏着他会找不到地方加。
+    if (fileDock_ != nullptr && !fileDock_->isVisible()) showFileList(true);
+
+    const bool listEmpty = (fileList_ == nullptr || fileList_->count() == 0);
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(TR("请先添加文件"));
+    if (listEmpty) {
+        box.setText(TR("文件列表里还没有文件，这个操作现在做不了。"));
+        box.setInformativeText(TR("请先在主界面的「待处理文件」列表里添加文件：点下面的「添加文件…」、"
+                                  "按 Ctrl+O，或者直接把文件拖进窗口；加好文件之后再执行这个操作。"));
+    } else {
+        box.setText(TR("文件列表里还没有 PDF，这个操作现在做不了。"));
+        box.setInformativeText(TR("这个功能要拿 PDF 当源文件：请先添加 PDF，"
+                                  "或者先把列表里的其他格式转换成 PDF 再操作。"));
+    }
+    auto* addBtn = box.addButton(TR("添加文件…"), QMessageBox::AcceptRole);
+    box.addButton(TR("知道了"), QMessageBox::RejectRole);
+    box.setDefaultButton(addBtn);
+    box.exec();
+    if (box.clickedButton() != addBtn) return false;
+
+    // addFiles() 是同步的（QFileDialog 模态阻塞），返回时列表里已经有新文件了
+    addFiles();
+    return fileList_ != nullptr && fileList_->count() > 0;
+}
+
 QString MainWindow::choosePdfSource() {
     const QString previewed = viewer_ != nullptr ? viewer_->currentPath() : QString();
     if (!previewed.isEmpty()) return previewed;
-    const QStringList pdfs = selectedPdfs();
+
+    QStringList pdfs = selectedPdfs();
     if (pdfs.size() == 1) return pdfs.first();
+
+    // 一个 PDF 都没有：以前这里只往日志里写一行，日志面板一隐藏就等于"点了没反应"，
+    // 所以改成明确弹提示，让用户先到主界面的文件列表里加文件。
     if (pdfs.isEmpty()) {
-        appendLog(TR("这里需要一个 PDF：先在待处理文件里添加或选中一个 PDF"));
-        return QString();
+        if (!promptAddFilesFirst()) return QString();
+        // 用户刚从「添加文件…」回来：重新取一次源，能用就直接继续（不用再点一遍菜单）
+        pdfs = selectedPdfs();
+        if (pdfs.size() == 1) return pdfs.first();
+        if (pdfs.isEmpty()) {
+            appendLog(TR("列表里还没有 PDF：先添加 PDF，或先把其他格式转换成 PDF"));
+            return QString();
+        }
     }
+
     bool ok = false;
     const QString chosen = QInputDialog::getItem(this, TR("选择 PDF"),
                                                  TR("对哪一个 PDF 执行："), pdfs, 0, false, &ok);
@@ -1897,6 +1979,20 @@ void MainWindow::openOcr() {
     if (source.isEmpty()) return;
     OcrDialog dlg(converter_->pdfBackend(), source, this);
     connect(&dlg, &OcrDialog::logMessage, this, [this](const QString& text) { appendLog(text); });
+    dlg.exec();
+}
+
+void MainWindow::openBatch(int op) {
+    // 预填列表：选中的 PDF 优先，没选就取列表里全部 PDF；一个都没有也照开窗口，
+    // 用户可以在批量窗口里添加或拖入文件。
+    QStringList candidates = selectedPdfs();
+    if (candidates.isEmpty()) {
+        for (const auto& path : allFiles()) {
+            if (fileExt(path) == QStringLiteral("pdf")) candidates << path;
+        }
+    }
+    BatchDialog dlg(converter_->pdfBackend(), static_cast<BatchOp>(op), candidates, this);
+    connect(&dlg, &BatchDialog::logMessage, this, [this](const QString& text) { appendLog(text); });
     dlg.exec();
 }
 

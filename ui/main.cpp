@@ -1,5 +1,15 @@
 #include <QApplication>
+#include <QFileInfo>
+#include <QStringList>
 #include <memory>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 #include "AppIcon.h"
 #include "I18nUi.h"
@@ -8,6 +18,42 @@
 #include "pdfword/i18n.hpp"
 #include "pdfword/job.hpp"
 #include "pdfword/path_util.hpp"
+
+namespace {
+
+// 从资源管理器"打开方式"、双击 PDF、拖到 exe 图标上启动时，Windows 会把文件路径塞进命令行。
+// Windows 上优先取宽字符版命令行：ANSI main() 的 argv 受系统代码页影响，
+// 中文/日文/阿拉伯文路径在非对应代码页的机器上会被读坏。
+QStringList commandLineArgs(int argc, char** argv) {
+    QStringList args;
+#ifdef _WIN32
+    int wideArgc = 0;
+    LPWSTR* wideArgv = ::CommandLineToArgvW(::GetCommandLineW(), &wideArgc);
+    if (wideArgv != nullptr) {
+        for (int i = 1; i < wideArgc; ++i) {
+            args << QString::fromWCharArray(wideArgv[i]);
+        }
+        ::LocalFree(reinterpret_cast<HLOCAL>(wideArgv));
+        return args;
+    }
+#endif
+    for (int i = 1; i < argc; ++i) {
+        args << QString::fromLocal8Bit(argv[i]);
+    }
+    return args;
+}
+
+// 只留下真实存在的文件，顺手跳过 -style 之类的程序开关（Windows 绝对路径不会以 "-" 开头）
+QStringList existingPaths(const QStringList& args) {
+    QStringList files;
+    for (const QString& arg : args) {
+        if (arg.isEmpty() || arg.startsWith(QLatin1Char('-'))) continue;
+        if (QFileInfo::exists(arg)) files << arg;
+    }
+    return files;
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
     // 界面语言要在建任何窗口之前定下来：ini 里 language=auto|zh|en，
@@ -33,6 +79,12 @@ int main(int argc, char** argv) {
     auto* window = new MainWindow(converter, jobs);
     window->setAttribute(Qt::WA_DeleteOnClose);
     window->show();
+
+    // 命令行带来的文件（"打开方式"/双击 PDF）：入列并预览第一个 PDF
+    const QStringList startupFiles = existingPaths(commandLineArgs(argc, argv));
+    if (!startupFiles.isEmpty()) {
+        window->openFilesFromCommandLine(startupFiles);
+    }
 
     return QApplication::exec();
 }

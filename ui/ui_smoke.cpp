@@ -44,19 +44,25 @@
 #include <QTabWidget>
 #include <QTreeWidget>
 #include <QTimer>
+#include <QElapsedTimer>
+#include <QThread>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrl>
 #include <QWheelEvent>
 #include <cstdio>
 #include <QDir>
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <set>
 
 #include "CompressDialog.h"
 #include "ConvertDialog.h"
+#include "BatchDialog.h"
 #include "DropListWidget.h"
 #include "ExtractDialog.h"
 #include "ImageToPdfDialog.h"
@@ -86,6 +92,8 @@ void check(bool cond, const QString& what) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    // 崩溃时缓冲里的日志会丢，冒烟一律直写（诊断友好）
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
 
     // 视图状态会写到 QSettings 的 INI 里；冒烟测试把它指到临时目录，
@@ -112,8 +120,28 @@ int main(int argc, char** argv) {
     MainWindow window(converter, jobs);
     window.show();
 
-    check(window.menuBar()->actions().size() == 7,
-          TR("主窗口有 7 个顶级菜单（文件/转换/PDF 工具/编辑与批注/视图/帮助/语言）"));
+    // ---- 从「打开方式」/双击 PDF 启动：命令行路径要入列并直接预览 ----
+    if (!sample.isEmpty()) {
+        // 这一步会真的往列表里加文件，断言完立刻清空，后面的拖放用例要从空列表起步
+        window.openFilesFromCommandLine(samples);
+        const QString absolute = QFileInfo(sample).absoluteFilePath();
+        const MainWindow::Session session = window.captureSession();
+        check(session.files.contains(absolute), TR("命令行传入的 PDF 已进入待处理列表"));
+        check(session.previewPath == absolute, TR("命令行传入的 PDF 被直接预览"));
+        bool cleared = false;
+        for (auto* action : window.findChildren<QAction*>()) {
+            if (action->text() == TR("清空列表")) {
+                action->trigger();
+                cleared = true;
+                break;
+            }
+        }
+        check(cleared && window.captureSession().files.isEmpty(),
+              TR("清空列表把命令行入列的文件移除了（后续用例复位）"));
+    }
+
+    check(window.menuBar()->actions().size() == 8,
+          TR("主窗口有 8 个顶级菜单（文件/转换/PDF 工具/批量/编辑与批注/视图/帮助/语言）"));
     check(window.windowTitle().startsWith(QStringLiteral("Pdf-Toolkit")), TR("窗口标题以 Pdf-Toolkit 开头"));
     check(!window.windowIcon().isNull(), TR("主窗口有 logo 图标（resources/icons.qrc 已编进二进制）"));
     check(!window.windowIcon().pixmap(32, 32).isNull(), TR("logo 能取到 32x32 的位图（任务栏/标题栏不空）"));
@@ -436,6 +464,62 @@ int main(int argc, char** argv) {
             check(snap.back().state == pw::JobState::Done, TR("带密码的转换任务执行完成"));
             check(std::filesystem::exists(out), TR("带密码的转换产物已落盘"));
         }
+    }
+
+    // ---- 转换多线程：N 个 pdf->docx 并行真跑，验证线程池上限与全部完成 ----
+    if (!sample.isEmpty()) {
+        const QString convDir = QDir::temp().filePath(QStringLiteral("pdfword-conv-smoke"));
+        QDir(convDir).removeRecursively();
+        QDir().mkpath(convDir);
+        const int n = 6;
+        QStringList srcs;
+        for (int i = 0; i < n; ++i) {
+            const QString copy = convDir + QStringLiteral("/c%1.pdf").arg(i);
+            QFile::copy(sample, copy);
+            srcs << copy;
+        }
+        const int cores = QThread::idealThreadCount();
+        const int cap = qMax(1, static_cast<int>(cores * 1.3));
+        check(jobs->workerLimit() >= 1 && jobs->workerLimit() <= cap,
+              TR("转换线程池上限不超过逻辑核数×1.3"));
+
+        // 统计并发峰值：listener 在多个 worker 线程回调，按任务 id 去重计 Running
+        std::mutex peakMutex;
+        std::set<int> active;
+        int peak = 0;
+        jobs->setListener([&](const pw::JobInfo& info) {
+            std::lock_guard<std::mutex> lk(peakMutex);
+            if (info.state == pw::JobState::Running) {
+                if (active.insert(info.id).second) {
+                    peak = std::max(peak, static_cast<int>(active.size()));
+                }
+            } else if (info.state == pw::JobState::Done || info.state == pw::JobState::Failed ||
+                       info.state == pw::JobState::Cancelled) {
+                active.erase(info.id);
+            }
+        });
+        for (int i = 0; i < n; ++i) {
+            const QString out = convDir + QStringLiteral("/c%1.docx").arg(i);
+            jobs->enqueue(pw::fsPath(srcs[i].toUtf8().toStdString()),
+                          pw::fsPath(out.toUtf8().toStdString()), "docx");
+        }
+        jobs->waitAll();
+        jobs->setListener(nullptr);
+
+        auto snap = jobs->snapshot();
+        int done = 0;
+        for (const auto& j : snap) {
+            if (j.state == pw::JobState::Done) ++done;
+        }
+        check(done == n, TR("6 个并行转换任务全部完成"));
+        bool allExist = true;
+        for (int i = 0; i < n; ++i) {
+            allExist = allExist && QFileInfo::exists(convDir + QStringLiteral("/c%1.docx").arg(i));
+        }
+        check(allExist, TR("6 个并行转换产物都落盘"));
+        std::printf("conv parallel peak=%d cap=%d\n", peak, cap);
+        check(peak >= 1 && peak <= cap, TR("并发峰值在线程上限内"));
+        check(cap == 1 || peak > 1, TR("多核时转换确实并行（峰值>1）"));
     }
 
     // ---- 把界面渲染成 PNG：不需要真实屏幕也能看布局 ----
@@ -1144,6 +1228,113 @@ int main(int argc, char** argv) {
                   TR("6 轮交互压测后滚动位置还没变"));
 
             shoot(&window, "main-window-inline-edit");
+        }
+
+        // ---- 批量菜单：七类操作，线程池并行（一线程一文件），真跑真出件 ----
+        {
+            auto* batchMenu = window.findChild<QMenu*>(QStringLiteral("menuBatch"));
+            check(batchMenu != nullptr && batchMenu->actions().size() == 7,
+                  TR("批量菜单挂着 7 个操作"));
+            if (!sample.isEmpty()) {
+                const QString batchDir = QDir::temp().filePath(QStringLiteral("pdfword-batch-smoke"));
+                QDir(batchDir).removeRecursively();
+                QDir().mkpath(batchDir);
+                // 三份同内容不同名的 PDF：验证并行出件互不覆盖
+                QStringList batchFiles;
+                for (int i = 1; i <= 3; ++i) {
+                    const QString copy = batchDir + QStringLiteral("/b%1.pdf").arg(i);
+                    const bool copied = QFile::copy(sample, copy);
+                    std::printf("batch copy %d -> %d (%s)\n", i, copied ? 1 : 0,
+                                copy.toUtf8().constData());
+                    batchFiles << copy;
+                }
+                check(QFileInfo::exists(batchFiles.first()), TR("批量冒烟的样本副本建出来了"));
+                const QString outRoot = batchDir + QStringLiteral("/out");
+                QDir().mkpath(outRoot);
+
+                // 起一轮批量并转事件循环等它收尾；configure 负责把参数填成合法值
+                const auto runBatch = [&](BatchOp op, const QStringList& inputs,
+                                          auto configure) -> QString {
+                    BatchDialog dlg(converter->pdfBackend(), op, inputs, nullptr);
+                    dlg.findChild<QLineEdit*>(QStringLiteral("batchOutDir"))->setText(outRoot);
+                    configure(dlg);
+                    auto* start = dlg.findChild<QPushButton*>(QStringLiteral("batchStartButton"));
+                    start->click();
+                    QElapsedTimer timer;
+                    timer.start();
+                    while (!start->isEnabled() && timer.elapsed() < 180000) {
+                        QApplication::processEvents(QEventLoop::AllEvents, 20);
+                        QThread::msleep(10);
+                    }
+                    check(start->isEnabled(),
+                          TR("批量%1在超时前收尾").arg(BatchDialog::opName(op)));
+                    const QString status =
+                        dlg.findChild<QLabel*>(QStringLiteral("batchStatus"))->text();
+                    std::printf("batch status: %s\n", status.toUtf8().constData());
+                    return status;
+                };
+                const QString allOk = TR("全部完成：成功 %1，失败 %2，跳过 %3").arg(3).arg(0).arg(0);
+
+                // 拆分：每个源文件一个子文件夹
+                QString st = runBatch(BatchOp::Split, batchFiles, [](BatchDialog& d) {
+                    d.findChild<QSpinBox*>(QStringLiteral("batchPagesPerFile"))->setValue(1);
+                });
+                check(st == allOk, TR("批量拆分 3 个文件全部成功"));
+                check(!QDir(outRoot + QStringLiteral("/b1") + TR("_拆分"))
+                             .entryList({QStringLiteral("*.pdf")}, QDir::Files)
+                             .isEmpty(),
+                      TR("批量拆分给 b1 建了子文件夹并出件"));
+
+                // 抽取：同一份页码范围套到每个文件
+                st = runBatch(BatchOp::Extract, batchFiles, [](BatchDialog& d) {
+                    d.findChild<QLineEdit*>(QStringLiteral("batchPageSpec"))->setText(QStringLiteral("1"));
+                });
+                check(st == allOk, TR("批量抽取 3 个文件全部成功"));
+                check(QFileInfo::exists(outRoot + QStringLiteral("/b2") + TR("_抽取") + QStringLiteral(".pdf")),
+                      TR("批量抽取出件存在"));
+
+                // 元数据：统一写标题，读回来验证
+                st = runBatch(BatchOp::Metadata, batchFiles, [](BatchDialog& d) {
+                    d.findChild<QLineEdit*>(QStringLiteral("batchMetaTitle"))->setText(QStringLiteral("batch-smoke"));
+                });
+                check(st == allOk, TR("批量元数据 3 个文件全部成功"));
+                {
+                    auto meta = converter->pdfBackend()->metadata(pw::fsPath(
+                        (outRoot + QStringLiteral("/b3") + TR("_元数据") + QStringLiteral(".pdf")).toUtf8().toStdString()));
+                    check(meta.ok() && meta.value().title == "batch-smoke",
+                          TR("批量写入的元数据能读回来"));
+                }
+
+                // 加密 → 解密一个来回
+                st = runBatch(BatchOp::Security, batchFiles, [](BatchDialog& d) {
+                    d.findChild<QLineEdit*>(QStringLiteral("batchUserPassword"))->setText(QStringLiteral("pw123"));
+                });
+                check(st == allOk, TR("批量加密 3 个文件全部成功"));
+                QStringList encFiles;
+                for (int i = 1; i <= 3; ++i) {
+                    encFiles << outRoot + QStringLiteral("/b%1").arg(i) + TR("_加密") + QStringLiteral(".pdf");
+                }
+                st = runBatch(BatchOp::Security, encFiles, [](BatchDialog& d) {
+                    d.findChild<QComboBox*>(QStringLiteral("batchSecurityMode"))->setCurrentIndex(1);
+                    d.findChild<QLineEdit*>(QStringLiteral("batchUserPassword"))->setText(QStringLiteral("pw123"));
+                });
+                check(st == allOk, TR("批量解密 3 个文件全部成功"));
+
+                // 压缩
+                st = runBatch(BatchOp::Compress, batchFiles, [](BatchDialog&) {});
+                check(st == allOk, TR("批量压缩 3 个文件全部成功"));
+
+                // 水印（文字）
+                st = runBatch(BatchOp::Watermark, batchFiles, [](BatchDialog& d) {
+                    d.findChild<QLineEdit*>(QStringLiteral("batchWatermarkText"))->setText(QStringLiteral("SMOKE"));
+                });
+                check(st == allOk, TR("批量水印 3 个文件全部成功"));
+
+                // OCR：引擎可用性随系统，只要求整轮收尾、状态给出汇总
+                st = runBatch(BatchOp::Ocr, batchFiles, [](BatchDialog&) {});
+                check(st.contains(TR("成功")) && st.contains(TR("失败")),
+                      TR("批量 OCR 整轮收尾并给出汇总"));
+            }
         }
 
         // ---- 视图状态持久化：藏起来的面板、挪过去的停靠侧、收起的导航条，重开一次还在 ----

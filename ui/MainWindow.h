@@ -61,6 +61,10 @@ public:
     Session captureSession() const;
     void applySession(const Session& session);
 
+    // 从"打开方式"/双击 PDF / 拖到 exe 图标上启动时，Windows 会把文件路径放到命令行里。
+    // 这里把路径入列，并预览第一个 PDF（没有 PDF 就只入列）。
+    void openFilesFromCommandLine(const QStringList& paths);
+
 private slots:
     void addFiles();
     void removeSelected();
@@ -77,6 +81,8 @@ private slots:
     void openWatermark();
     void openImageToPdf();
     void openOcr();
+    // 「批量」菜单：op 取 BatchOp 的整数值（见 BatchDialog.h），七类操作共用一个批量窗口
+    void openBatch(int op);
     // 编辑与批注：5 个子功能，各开一个窗口
     void openTextImage();
     void openAnnot();
@@ -121,7 +127,12 @@ private:
     // 列表里被选中的 PDF（没选就取全部），按列表顺序
     QStringList selectedPdfs() const;
     // 需要用"某个 PDF"来操作时的取源逻辑：当前预览 > 唯一选中 > 询问用户
+    // 一个文件/PDF 都没有时不静默返回，而是弹「请先添加文件」提示（见 promptAddFilesFirst）
     QString choosePdfSource();
+    // 待处理列表空（或里面没有 PDF）时，点功能菜单的统一提示：
+    // 弹框说明"要先在主界面的文件列表里加文件"，并给一个「添加文件…」按钮直接进文件选择。
+    // 返回 true 表示用户确实加了文件，可以接着干；false 表示用户放弃（取消/添加后仍为空）。
+    bool promptAddFilesFirst();
     // 可入列的文档扩展名（小写、不带点）
     static QStringList supportedExtensions();
     // 把一批路径加进待处理列表，返回真正新增的条数（重复路径跳过）
@@ -170,7 +181,6 @@ private:
     QSplitter* splitter_ = nullptr;
     PdfViewWidget* viewer_ = nullptr;
     QPlainTextEdit* logView_ = nullptr;
-    QLabel* statusLabel_ = nullptr;
     QProgressBar* progress_ = nullptr;
     QActionGroup* dockSideGroup_ = nullptr;
     QAction* dockLeftAct_ = nullptr;

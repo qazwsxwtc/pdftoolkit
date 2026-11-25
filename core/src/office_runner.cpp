@@ -2,9 +2,11 @@
 #include "pdfword/i18n.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -240,6 +242,24 @@ fs::path OfficeRunner::isolatedProfileDir() const {
     return profile;
 }
 
+fs::path OfficeRunner::acquireProfile() {
+    std::lock_guard<std::mutex> lock(profileMutex_);
+    if (!freeProfiles_.empty()) {
+        fs::path p = freeProfiles_.back();
+        freeProfiles_.pop_back();
+        return p;
+    }
+    fs::path p = config_.workDir / "lo-profiles" / ("p" + std::to_string(profileCount_++));
+    std::error_code ec;
+    fs::create_directories(p, ec);
+    return p;
+}
+
+void OfficeRunner::releaseProfile(const fs::path& profile) {
+    std::lock_guard<std::mutex> lock(profileMutex_);
+    freeProfiles_.push_back(profile);
+}
+
 std::string OfficeRunner::extensionFromFilter(const std::string& filter) {
     std::size_t pos = filter.find(':');
     std::string ext = (pos == std::string::npos) ? filter : filter.substr(0, pos);
@@ -294,6 +314,11 @@ Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>
     fs::create_directories(request.outDir, ec);
     fs::create_directories(config_.workDir, ec);
 
+    // 本次转换独占一个 profile，函数退出（含任何提前 return）时归还池子
+    fs::path profile = acquireProfile();
+    std::unique_ptr<fs::path, std::function<void(fs::path*)>> profileGuard(
+        &profile, [this](fs::path* p) { releaseProfile(*p); });
+
     for (const auto& in : request.inputs) {
         if (!existsLong(in)) {
             return Status::error(ErrorCode::IoError, pw::i18n::t("输入文件不存在: ") + fsUtf8(in));
@@ -310,7 +335,7 @@ Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>
     args.push_back("--nofirststartwizard");
     args.push_back("--nolockcheck");
     args.push_back("--nodefault");
-    args.push_back("-env:UserInstallation=" + toFileUrl(isolatedProfileDir()));
+    args.push_back("-env:UserInstallation=" + toFileUrl(profile));
     args.push_back("--convert-to");
     args.push_back(filter);
     args.push_back("--outdir");
@@ -326,8 +351,12 @@ Status OfficeRunner::convert(const OfficeRequest& request, std::vector<fs::path>
         request.log(line);
     }
 
-    fs::path logFile = config_.workDir / "lo-convert.log";
+    // 日志文件按调用唯一，避免并发转换互踩同一个文件；读完即删，不留垃圾
+    static std::atomic<unsigned long> logSeq{0};
+    fs::path logFile = config_.workDir / ("lo-convert-" + std::to_string(++logSeq) + ".log");
     RunResult r = runProcess(config_.libreOfficePath, args, timeoutMs, logFile);
+    std::error_code logEc;
+    fs::remove(logFile, logEc);
 
     if (r.timedOut) {
         return Status::error(ErrorCode::Timeout,

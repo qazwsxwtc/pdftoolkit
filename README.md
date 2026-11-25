@@ -539,6 +539,36 @@ pwsh -File packaging\build-installer.ps1
   .\dist\Pdf-Toolkit-0.0.2-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR="D:\tmp\pdt"
   ```
 
+### PDF 关联：右键「打开方式」里出现 Pdf-Toolkit
+
+安装向导里有一项任务 **“把 Pdf-Toolkit 加入 PDF 的打开方式菜单”**（默认勾选，`/TASKS="pdfassoc"` 可静默指定），
+装完后：
+
+- `.pdf` 的右键菜单 →「打开方式」里出现 **Pdf-Toolkit**（图标是程序自己的 logo）；
+- 在 Windows 「默认应用」里也能把它选成默认 PDF 程序。
+
+**它只登记为候选程序，不会抢走你现在的默认程序** —— 这是有意的：安装器不该替你改默认应用。
+装了两份同名安装时，后装的那份会覆盖 `Applications\pdftoolkit.exe` 的路径。
+
+注册表具体动的是这三处（`PrivilegesRequired=lowest` 时落在 `HKCU\Software\Classes`）：
+
+| 键 | 作用 |
+| --- | --- |
+| `Applications\pdftoolkit.exe`（`FriendlyAppName` + `DefaultIcon` + `shell\open\command`） | 「打开方式」列表靠它认出这个 exe，名字显示为 `Pdf-Toolkit` |
+| `.pdf\OpenWithProgids` 下的值 `PdfToolkit.Document` | 把我们的 ProgId 挂到 `.pdf` 的候选程序里 |
+| `PdfToolkit.Document`（类型名 / 图标 / 打开命令） | ProgId 本体，打开命令是 `"<安装目录>\pdftoolkit.exe" "%1"` |
+
+卸载时只删自己那一条（`Applications\pdftoolkit.exe`、`PdfToolkit.Document` 整键，
+`.pdf\OpenWithProgids` 只删 `PdfToolkit.Document` 这个值），其它程序的候选原样保留。
+
+安装器带 `ChangesAssociations=yes`，装完会通知 Shell 刷新关联缓存，通常立刻就能看到，
+个别机器要等下次登录或重启资源管理器。
+
+**打开命令是命令行传文件的**：`pdftoolkit.exe "C:\a.pdf"`。程序启动时会把命令行里的文件全部加进
+待处理列表，并直接预览其中第一个 PDF；多个文件一起“打开方式”也认（`argv` 用宽字符版
+`CommandLineToArgvW` 取，中文 / 日文 / 阿拉伯文路径都不会读坏）。拖到 exe 图标上、
+拖到 `pdftoolkit.exe` 快捷方式上，效果一样。
+
 ## 当前状态（说清楚哪些是真跑通了，哪些还没）
 
 以下“已验证”均指在 `build\mupdf`（`PDFWORD_WITH_MUPDF=ON`，MuPDF 1.26.10 + LibreOffice 26.8.3.1）

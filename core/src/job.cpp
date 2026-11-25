@@ -1,27 +1,47 @@
 #include "pdfword/job.hpp"
 #include "pdfword/i18n.hpp"
 
+#include <algorithm>
 #include <utility>
 #include "pdfword/path_util.hpp"
 
 namespace pw {
 
 JobQueue::JobQueue(std::shared_ptr<Converter> converter) : converter_(std::move(converter)) {
-    worker_ = std::thread(&JobQueue::workerLoop, this);
+    // 线程上限 = floor(逻辑内核数 × 1.3)，至少 1；与批量处理窗口同一套约定
+    unsigned cores = std::thread::hardware_concurrency();
+    if (cores == 0) cores = 1;
+    maxWorkers_ = std::max(1, static_cast<int>(cores * 1.3));
 }
 
 JobQueue::~JobQueue() {
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::mutex> lock(mutex_);
         stop_ = true;
+        cv_.notify_all();
+        // 排空仍在排队/在跑的任务，并等所有工作线程退出后再拆成员。
+        // 线程是 detach 的，靠 liveWorkers_ 计数 + 同一把锁保证退出 happens-before 析构。
+        idleCv_.wait(lock, [this] { return liveWorkers_ == 0; });
     }
-    cv_.notify_all();
-    if (worker_.joinable()) worker_.join();
 }
 
 void JobQueue::setListener(Listener listener) {
     std::lock_guard<std::mutex> lock(mutex_);
     listener_ = std::move(listener);
+}
+
+void JobQueue::spawnWorkersLocked() {
+    const int outstanding = static_cast<int>(pending_.size()) + runningCount_;
+    while (liveWorkers_ < maxWorkers_ && liveWorkers_ < outstanding) {
+        ++liveWorkers_;
+        try {
+            std::thread(&JobQueue::workerLoop, this).detach();
+        } catch (...) {
+            // 线程创建失败（资源耗尽）：回退计数，已起的线程仍会接手任务
+            --liveWorkers_;
+            break;
+        }
+    }
 }
 
 int JobQueue::enqueue(const fs::path& source, const fs::path& output, const std::string& target,
@@ -40,13 +60,14 @@ int JobQueue::enqueue(const fs::path& source, const fs::path& output, const std:
         info.password = password;
         jobs_[id] = info;
         pending_.push_back(id);
+        spawnWorkersLocked();
     }
-    cv_.notify_one();
+    cv_.notify_all();
     return id;
 }
 
 // 注意：只有还在排队（Pending）的任务能被真正取消。
-// 已经开始转换的任务（LibreOffice 子进程）在骨架阶段不强杀，会跑完并保持 Done 状态。
+// 已经开始转换的任务（LibreOffice 子进程）不强杀，会跑完并保持 Done 状态。
 void JobQueue::cancel(int jobId) {
     JobInfo copy;
     bool hasCopy = false;
@@ -91,7 +112,7 @@ std::vector<JobInfo> JobQueue::snapshot() const {
 
 void JobQueue::waitAll() {
     std::unique_lock<std::mutex> lock(mutex_);
-    idleCv_.wait(lock, [this] { return pending_.empty() && !running_; });
+    idleCv_.wait(lock, [this] { return pending_.empty() && runningCount_ == 0; });
 }
 
 void JobQueue::notify(const JobInfo& info) {
@@ -114,8 +135,13 @@ void JobQueue::workerLoop() {
         {
             std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait(lock, [this] { return stop_ || !pending_.empty(); });
-            if (stop_ && pending_.empty()) break;
-            if (pending_.empty()) continue;
+            if (pending_.empty()) {
+                // 没活干（含 stop_ 后排空）：这个线程退出，把池缩回去；
+                // 来新任务时 enqueue 会再补线程。退出前最后一次访问成员都在锁内。
+                --liveWorkers_;
+                idleCv_.notify_all();
+                return;
+            }
 
             id = pending_.front();
             pending_.erase(pending_.begin());
@@ -142,7 +168,7 @@ void JobQueue::workerLoop() {
             password = it->second.password;
 
             JobInfo runningCopy = it->second;
-            running_ = true;
+            ++runningCount_;
             lock.unlock();
             notify(runningCopy);
         }
@@ -182,7 +208,7 @@ void JobQueue::workerLoop() {
                 }
                 finished = it->second;
             }
-            running_ = false;
+            --runningCount_;
         }
         idleCv_.notify_all();
         if (finished.id != 0) notify(finished);

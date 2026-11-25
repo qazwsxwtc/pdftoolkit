@@ -29,6 +29,8 @@ set(PDFWORD_UI_SOURCES
     ImageToPdfDialog.h
     OcrDialog.cpp
     OcrDialog.h
+    BatchDialog.cpp
+    BatchDialog.h
     EditDialogs.cpp
     EditDialogs.h
     DropListWidget.cpp
